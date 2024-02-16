@@ -175,7 +175,7 @@ MANGF<TFixedImage, TMovingImage>
 	m_NGF->GetDerivative(parameters,b);
 
 	derivative=a;
-	for(int p=0;p<derivative.GetSize();p++)
+	for(long unsigned int p=0;p<derivative.GetSize();p++)
 	{derivative[p]= (this->m_lambdaDerivativeMI *a[p])+ (this->m_lambdaDerivative*b[p]);}
 		
 	std::cout << "\tNGF derivative mean " << b.mean()* this->m_lambdaDerivative << "\tMI derivative mean " << a.mean() * this->m_lambdaDerivativeMI << std::endl;

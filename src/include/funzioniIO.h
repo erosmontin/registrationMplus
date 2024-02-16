@@ -93,7 +93,7 @@ void pMetric(std::string VV,std::vector<std::string> & P,std::vector<std::string
 	std::cout<<VV<<" parameters "<<std::endl;
 	bar();
 
-	for (int o=0; o<P.size();o++)
+	for (long unsigned int o=0; o<P.size();o++)
 		std::cout<< P[o]<<":\t"<< V[o]<<std::endl;
 	bar();
 };

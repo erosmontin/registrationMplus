@@ -167,7 +167,7 @@ MANGF2<TFixedImage, TMovingImage>
 
 
 	derivative=a;
-	for(int p=0;p<derivative.GetSize();p++)
+	for(long unsigned int p=0;p<derivative.GetSize();p++)
 	{derivative[p]= (a[p]* this->GetNGFValue(parameters))+ this->m_lambdaDerivative*b[p]*this->GetMAValue(parameters);}
 		
 

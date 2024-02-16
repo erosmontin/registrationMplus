@@ -197,7 +197,7 @@ int main( int argc, char *argv[] )
   RegistrationType::SmoothingSigmasArrayType smoothingSigmasPerLevel;
   smoothingSigmasPerLevel.SetSize(numberOfLevels);
 
-  for (int a = 0; a <numberOfLevels; a++)
+  for (unsigned int a = 0; a <numberOfLevels; a++)
   {
 	  smoothingSigmasPerLevel[a] = 1;//std::pow(2, (numberOfLevels - a)) / 2.0;
 	  percentagePerLevel[a] = 1.0; //- (((double)a / (double) numberOfLevels) / 2);
