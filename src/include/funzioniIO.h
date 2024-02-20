@@ -37,7 +37,7 @@ void printParam(std::vector<std::string> & A){
 
 
 void firma(){
-	std::cout << "\n\n\neros.montin@polimi.it" << std::endl;
+	std::cout << "\n\n\neros.montin@gmail.com" << std::endl;
 	bar();
 
 };
