@@ -35,7 +35,7 @@ const unsigned int ImageDimension = 3;
 
 int main( int argc, char *argv[] )
 {
-    po::options_description desc("Bspline Registration\n"
+    po::options_description desc("B-spline Registration\n"
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
@@ -251,15 +251,12 @@ for(const auto& it : vm) {
 		FixedImageType::RegionType meshregionresampled=resampler->GetOutput()->GetLargestPossibleRegion();
 		
 		fixedImage->SetRequestedRegion(meshregionresampled);
-		movingImage->SetRequestedRegion(meshregionresampled);
 	}
 
 	
 	unsigned int numberOfGridNodes=0;
 	for( unsigned int i=0; i< SpaceDimension; i++ )
 	{
-		
-
 		fixedOrigin[i] = meshorigin[i];
 		fixedPhysicalDimensions[i] = meshspacing[i] *
 				static_cast<double>(
@@ -358,12 +355,8 @@ for(const auto& it : vm) {
 	std::cout << "Starting Registration "
 			<< std::endl;
 
-	optimizer->SetMinimize((bool)1);
-	registration->SetNumberOfThreads(NT);
 
-
-
-	std::cout<< "\n\n\n\n FFD MANGF	\n\tThread: "<< metric->GetNumberOfThreads() <<
+	std::cout<< "\n\n\n\n B-spline transform usin itkMANGFMSE	\n\tThread: "<< metric->GetNumberOfThreads() <<
 			"\nVariables: " <<transform->GetNumberOfParameters() <<
 			"\nVariables: " << transform->GetTransformDomainMeshSize() <<
 			

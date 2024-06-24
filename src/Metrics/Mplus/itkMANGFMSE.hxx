@@ -58,7 +58,7 @@ MANGFMSE<TFixedImage,TMovingImage>
 	m_MA->SetMovingImage(this->m_MovingImage);
 	m_MA->SetInterpolator(this->m_Interpolator);
 	m_MA->SetTransform(this->m_Transform);
-	m_MA->SetFixedImageRegion(this->m_FixedImage->GetBufferedRegion() );
+	m_MA->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion() );
 	m_MA->SetNumberOfHistogramBins(this->m_BinNumbers);
 	m_MA->SetNumberOfSpatialSamples(this->m_MANumberOfSamples);
 	m_MA->SetNumberOfThreads(this->m_NumberOfThreads);
@@ -72,7 +72,7 @@ MANGFMSE<TFixedImage,TMovingImage>
 	m_MSE->SetMovingImage(this->m_MovingImage);
 	m_MSE->SetInterpolator(this->m_Interpolator); //m_MSE->SetInterpolator(this->m_INTERNALL_interpolator);
 	m_MSE->SetTransform(this->m_Transform);
-	m_MSE->SetFixedImageRegion(this->m_FixedImage->GetBufferedRegion() );
+	m_MSE->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion() );
 	m_MSE->UseAllPixelsOff();
 	m_MSE->SetNumberOfThreads(this->m_NumberOfThreads);
 	m_MSE->SetUseCachingOfBSplineWeights( this->m_UseCachingOfBSplineWeights );
@@ -90,7 +90,7 @@ MANGFMSE<TFixedImage,TMovingImage>
 	m_NGF->SetNumberOfThreads(this->m_NumberOfThreads);
 	m_NGF->SetUseCachingOfBSplineWeights( this->m_UseCachingOfBSplineWeights );
 	m_NGF->UseAllPixelsOff();
-	RegionType inputRegion = this->m_FixedImage->GetBufferedRegion();
+	RegionType inputRegion = this->m_FixedImage->GetRequestedRegion();
 	m_NGF->SetFixedNoise(this->m_FixedEta);//this NGF noise can be considered the eta parameter
 	m_NGF->SetMovingNoise(this->m_MovingEta);
 	m_NGF->SetFixedImageRegion(inputRegion);
@@ -192,7 +192,6 @@ MANGFMSE<TFixedImage, TMovingImage>
 ::GetDerivative(const ParametersType & parameters,DerivativeType & derivative) const
  {
 
-
 	DerivativeType a;
 	a=parameters;
 	if (this->m_MuDerivative!=0.0)
@@ -200,8 +199,6 @@ MANGFMSE<TFixedImage, TMovingImage>
 	else
 		a.Fill(0.0);
 	
-
-
 	DerivativeType b;
 	b=parameters;
 	if (this->m_LambdaDerivative!=0.0)
