@@ -60,7 +60,7 @@ public:
 	typedef typename MovingGF::PixelType MV; 
 	typedef typename FixedGF::PixelType  FV; 
 	typedef typename MovingGF::PixelType::RealValueType Real; 
-	typedef typename NGFIteratorTrait<MovingGF, MovingGF::ImageDimension>::ConstIterator GradientIteratorType; 
+	typedef typename NGFIteratorTrait<FixedGF, FixedGF::ImageDimension>::ConstIterator GradientIteratorType; // changed from MovingGF to FixedGF to allow for different image types EROS.	
 	typedef std::unique_ptr<NGFKernel> Pointer;
 	// typedef std::auto_ptr<NGFKernel> Pointer; 
 	

@@ -57,7 +57,6 @@ typename TInputImage::PixelType ITK_EXPORT GetImageNoise(const TInputImage *imag
 		++it; 
 		++hi; 
 	}
-	
 	if (help.empty()) 
 		throw std::invalid_argument("GetImageNoise: Input image is empty"); 
 	

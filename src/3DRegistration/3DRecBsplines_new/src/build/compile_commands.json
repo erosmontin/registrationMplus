@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/build",
-  "command": "/usr/bin/c++ -DITK_IO_FACTORY_REGISTER_MANAGER -I/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/build/ITKFactoryRegistration -isystem /usr/include/hdf5/serial -isystem /usr/include/gdcm-3.0 -isystem /usr/include/ITK-5.2 -g -o CMakeFiles/3DRecBsplinesMANGFushort.dir/3DRecBsplinesMANGFushort.o -c /data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/3DRecBsplinesMANGFushort.cxx",
-  "file": "/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/3DRecBsplinesMANGFushort.cxx",
-  "output": "CMakeFiles/3DRecBsplinesMANGFushort.dir/3DRecBsplinesMANGFushort.o"
-}
-]

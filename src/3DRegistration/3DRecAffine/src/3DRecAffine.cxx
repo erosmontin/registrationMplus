@@ -19,7 +19,7 @@
 #include "itkTransformFileWriter.h"
 #include "../../Version.h"
 
-#include "../../../Metrics/NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkGetImageNoiseFunction.h"
+
 #include "../../../includes/imageUtils.h"
 #include "../../../includes/registrationUtils.h"
 
@@ -28,6 +28,8 @@
 
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
+
+
 
 const unsigned int ImageDimension = 3;
 
@@ -46,18 +48,18 @@ int main( int argc, char *argv[] )
         ("vfout,v", po::value<std::string>()->default_value("N"), "VF output filename")
         ("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")
 	    ("mu", po::value<double>()->default_value(1.0), "mu value MI 1.0")
-		("muderivative,M", po::value<double>()->default_value(1.0), "mu derivative MI 1.0")
+		("muderivative,M", po::value<double>()->default_value(1.0), "mu derivative 1.0")
 		("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")
         ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
-	    ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
+	    ("bsplinecaching,B", po::value<bool>()->default_value(true), "Bspline caching, 1 for true")
 		("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
-		("lambda,l", po::value<double>()->default_value(1.0), "lambda value NGF 1.0")
-        ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")
-        ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
-        ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
+		("lambda,l", po::value<double>()->default_value(1.0), "lambda value MI + lambda NGF 1.0")
+        ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative 0 no derivatives")
+        ("etavaluefixed,r", po::value<double>()->default_value(2), "Eta value fixed image(NGF noise) 2")
+        ("etavaluemoving,s", po::value<double>()->default_value(2), "Eta value moving image (NGF noise) 2")
         ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
-	    ("nu,n", po::value<double>()->default_value(1.0), "nu value MSE 1.0")
-		("nuderivative,N", po::value<double>()->default_value(1.0), "nu MSE derivative 1.0")
+	    ("nu,n", po::value<double>()->default_value(1.0), "yota value MSE 1.0")
+		("nuderivative,N", po::value<double>()->default_value(1.0), "nu derivative 1.0")
         ("gridresolution,g", po::value<double>()->default_value(2), "Mesh resolution (mm) 2")
         ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
         ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
@@ -148,23 +150,6 @@ for(const auto& it : vm) {
 	double DFLTPIXELVALUE=vm["dfltpixelvalue"].as<double>();
 	bool V=vm["verbose"].as<bool>();
 	std::string GRIDPOSITION=vm["gridposition"].as<std::string>();
-
-// #let's fix a few things
-	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
-	{
-		if (ETAF==-1)
-		{
-			ETAF=itk::GetImageNoise<FixedImageType>(fixedImage);
-		}
-		if (ETAM==-1)
-		{
-			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
-		}
-		printf("Fixed image noise: %f\n",ETAF);
-		printf("Moving image noise: %f\n",ETAM);
-
-	}
-
 
 	typedef  float          PixelType;
 	typedef itk::Image< PixelType, ImageDimension >  FixedImageType;
@@ -324,8 +309,6 @@ for(const auto& it : vm) {
 	metric->SetNGFNumberOfSamples(numberOfSamplesMA);
 
 	metric->SetNumberOfThreads(NT);
-
-	
 	metric->SetFixedEta(ETAF);
 	metric->SetMovingEta(ETAM);
 	metric->SetEvaluator(NGFevaluator);

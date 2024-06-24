@@ -121,7 +121,7 @@ public:
 
 
 	virtual void Initialize(void);
-
+	void print() const;
 	MeasureType GetValue(const ParametersType & parameters) const;
 	MeasureType GetNGFValue(const ParametersType & parameters) const;
 	MeasureType GetMAValue(const ParametersType & parameters) const;
