@@ -1,4 +1,4 @@
-# Registration based on MA+NGF
+# Registration based on MA+NGF+MSE
 
 
 ## Cite Us
@@ -15,3 +15,5 @@ Cavatorta C, Meroni S, Montin E, et al. Retrospective study of late radiation-in
 ## Docker version v1
 https://hub.docker.com/r/erosmontin/mplus
 erosmontin/mplus:tagname
+
+## Docker version v2 coming
