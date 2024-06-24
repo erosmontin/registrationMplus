@@ -1,0 +1,3 @@
+/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/build/CMakeFiles/3DRecBsplinesMANGFushort.dir
+/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/build/CMakeFiles/edit_cache.dir
+/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/build/CMakeFiles/rebuild_cache.dir

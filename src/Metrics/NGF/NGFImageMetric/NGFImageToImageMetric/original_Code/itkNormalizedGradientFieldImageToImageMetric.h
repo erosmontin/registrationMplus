@@ -122,7 +122,7 @@ public:
 
   /** Initialize the Metric by making sure that all the components
    *  are present and plugged together correctly     */
-  virtual void Initialize(void);
+  virtual void Initialize(void) throw ( ExceptionObject );
 
   /** Initialize the Metric by setting all the required components 
       \param fixed 
@@ -148,13 +148,6 @@ public:
    */
 
   void SetEvaluator(EvaluatorKernelType *evaluator); 
-
-	itkGetMacro( FixedNoise, double);
-	itkSetMacro( FixedNoise, double);
-
-	itkGetMacro( MovingNoise, double);
-	itkSetMacro( MovingNoise, double);
-
 
 protected:
   NormalizedGradientFieldImageToImageMetric();
@@ -185,10 +178,6 @@ private:
   
   typename GradientFilter::Pointer            m_GradientFilters[TMovingImage::ImageDimension]; 
   typename GradientFilter::OutputImagePointer m_GradientComponent[TMovingImage::ImageDimension];
-
-	double m_FixedNoise;
-	double m_MovingNoise;
-
   
 };
 

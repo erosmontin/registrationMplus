@@ -34,8 +34,7 @@ NS_BEGIN(itk)
 template <class TFixedImage, class TMovingImage> 
 NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
 ::NormalizedGradientFieldImageToImageMetric()
-{m_FixedNoise=1;
-	m_MovingNoise=1;
+{
 }
 
 
@@ -45,7 +44,7 @@ NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
 template <class TFixedImage, class TMovingImage> 
 void
 NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
-::Initialize(void)
+::Initialize(void) throw ( ExceptionObject )
 {
 
 	Superclass::Initialize();
@@ -60,25 +59,22 @@ NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
 	
 	m_TransformMovingImageFilter->SetDefaultPixelValue( 0 );
 	
-	
-	
 	m_TransformMovingImageFilter->SetSize( this->m_FixedImage->GetLargestPossibleRegion().GetSize() );
 	m_TransformMovingImageFilter->SetOutputOrigin( this->m_FixedImage->GetOrigin() );
 	m_TransformMovingImageFilter->SetOutputSpacing( this->m_FixedImage->GetSpacing() );
 	m_TransformMovingImageFilter->SetOutputDirection( this->m_FixedImage->GetDirection() );
 	
 	m_MovingNGFEvaluator->SetInput(m_TransformMovingImageFilter->GetOutput()); 
-	m_MovingNGFEvaluator->SetNoise( m_MovingNoise );
+	
 	typename  ImageToNGFFilter<FixedImageType>::Pointer ngf_eval = ImageToNGFFilter<FixedImageType>::New(); 
 	ngf_eval->SetInput(this->m_FixedImage); 
-	ngf_eval->SetNoise( m_FixedNoise );
 	ngf_eval->Update(); 
 	m_FixedNGF = ngf_eval->GetOutput(); 
 	
 	m_MovingNGFEvaluator->Update(); 
 	m_MovingNGF = m_MovingNGFEvaluator->GetOutput(); 
 
-	for (unsigned int i=0; i<TMovingImage::ImageDimension; i++) {
+	for (int i=0; i<TMovingImage::ImageDimension; i++) {
 		m_GradientOperators[i].SetDirection( i );
 		m_GradientOperators[i].CreateDirectional();
 		
@@ -153,20 +149,12 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(const Trans
 		typename FixedImageType::PointType inputPoint;
 		this->m_FixedImage->TransformIndexToPhysicalPoint( index, inputPoint );
 		const TransformJacobianType & jacobian = this->m_Transform->GetJacobian( inputPoint ); 
-		#pragma omp parallel for
+		
 		for(unsigned int par=0; par < ParametersDimension; par++)	{
 			RealType sum = RealType();
-			// for(unsigned int dim = 0; dim <  FI::ImageDimension; dim++) {
-			// 	sum += jacobian( dim, par ) * igrad.Value()[dim];
-			// }
-		for(unsigned int dim = 0; dim <  FI::ImageDimension; dim++) {
-        auto jacobianValue = jacobian(dim, par);
-        auto gradientValue = igrad.Value()[dim];
-        if (jacobianValue != 0.0 && gradientValue != 0.0) {
-            sum += jacobianValue * gradientValue;
-        }
-    }
-
+			for(unsigned int dim = 0; dim <  FI::ImageDimension; dim++) {
+				sum += jacobian( dim, par ) * igrad.Value()[dim];
+			}
 			derivative[par] += sum;
 		}
 		++ifi; 

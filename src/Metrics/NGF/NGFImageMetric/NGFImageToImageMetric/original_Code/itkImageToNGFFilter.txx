@@ -1,19 +1,32 @@
 /*=========================================================================
-Noise is the ETA parameter of haber
+
+  Program:   Insight Segmentation & Registration Toolkit
+  Module:    $RCSfile: itkImageToNGFFilter.txx $
+  Language:  C++
+  Date:      $Date$
+  Version:   $Revision$
+
+  Copyright (c) Insight Software Consortium. All rights reserved.
+  See ITKCopyright.txt or http://www.itk.org/HTML/Copyright.htm for details.
+
+     This software is distributed WITHOUT ANY WARRANTY; without even 
+     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+     PURPOSE.  See the above copyright notices for more information.
+
 =========================================================================*/
 
 #include "itkGetImageNoiseFunction.h"
-#include <omp.h>
+
 NS_BEGIN(itk)
 
 template <class TInputImage>
-ImageToNGFFilter<TInputImage>::ImageToNGFFilter()//:m_Noise(-1.0)
+ImageToNGFFilter<TInputImage>::ImageToNGFFilter():
+m_Noise(-1.0)
 {
-
 }
 
 template <class TInputImage>
-void ImageToNGFFilter<TInputImage>::aSetNoise(double noise)
+void ImageToNGFFilter<TInputImage>::SetNoise(double noise)
 {
 	m_Noise = noise; 
 }
@@ -28,24 +41,19 @@ void ImageToNGFFilter<TInputImage>::Update()
 	// automatic initialization doesn't seem to be ITK style 
 	// OTOH, never let a man do a machines job 
 	if (m_Noise <= 0.0)
-		aSetNoise(GetImageNoise<TInputImage>(this->GetInput()));
+		SetNoise(GetImageNoise<TInputImage>(this->GetInput()));
 
 	// Evaluate "jump" value
 	ImageRegionIterator<GradientType> ig(o, region); 
 	double eta = 0.0;
-	
-    
 	while (!ig.IsAtEnd()) {
 		eta += ig.Value().GetNorm();
 		++ig;
 	}
-
-	
 	eta *= m_Noise / region.GetNumberOfPixels();
 
 	const double eta2 = eta * eta;
 	
-
 	// normalize gradient 
 	ig.GoToBegin();
 	while (!ig.IsAtEnd()) {

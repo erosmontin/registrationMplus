@@ -1,2 +1,0 @@
-non ancora apposto
-

@@ -1,0 +1,60 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "2.4"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "PRJ_3DRecBsplinesMANGFushort",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "3DRecBsplinesMANGFushort::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-3DRecBsplinesMANGFushort-Debug-ba5f28f595d58d00accb.json",
+					"name" : "3DRecBsplinesMANGFushort",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src/build",
+		"source" : "/data/PROJECTS/registrationSuite/src/3DRegistration/3DRecBsplinesMANGFushort/src"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 5
+	}
+}

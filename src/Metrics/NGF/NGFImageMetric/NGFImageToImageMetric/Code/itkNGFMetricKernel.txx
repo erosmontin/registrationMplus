@@ -44,6 +44,8 @@ NGFScalarKernel<MovingGF,FixedGF>::Gradient(MV& result,
 				   const FV& fixed)const 
 {
 	Real v = moving * fixed; 
+	#pragma omp parallel for
+
 	for (unsigned long i = 0; i < result.Size(); ++i) 
 		result[i] = - 2.0 * v * (gradmoving[i].Value() * fixed); 
 	
@@ -146,7 +148,7 @@ NGFCrossKernel<MovingGF,FixedGF>::Gradient(MV& result,
 	typename DispatchCrossproduct::ReturnType help; 
 
 	DispatchCrossproduct::Apply(x, moving, fixed);
-
+	#pragma omp parallel for
 	for (unsigned long i = 0; i < result.Size(); ++i) {
 		DispatchCrossproduct::Apply(help, gradmoving[i].Value(), fixed); 
 		result[i] = 2.0 * (help * x); 
@@ -190,7 +192,7 @@ NGFScaledDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result,
 	const Real helper0 = dot_ff - dot_mf * cxy; 
 
 	const Real helper = - helper0 * cxy; 
-
+	#pragma omp parallel for
 	for (unsigned long i = 0; i < result.Size(); ++i)
 		result[i] = helper * ((2.0 * (fixed * g[i].Value())) - dotrsbymm * (moving * g[i].Value())); 
 
@@ -218,6 +220,7 @@ NGFDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result,
 					      const FV& fixed)const 
 {
 	Real v = (moving - fixed) * fixed; 
+	#pragma omp parallel for
 	for (unsigned long i = 0; i < result.Size(); ++i) 
 		result[i] = 2.0 * v * (gradmoving[i].Value() * fixed); 
 	return v * v; 
@@ -244,6 +247,7 @@ NGFDelta2Kernel<MovingGF,FixedGF>::Gradient(MV& result,
 					      const FV& fixed)const 
 {
 	Real v = (moving - fixed) * (moving + fixed); 
+	#pragma omp parallel for
 	for (unsigned long i = 0; i < result.Size(); ++i) 
 		result[i] = 4.0 * v * (gradmoving[i].Value() * moving); 
 	return v * v; 

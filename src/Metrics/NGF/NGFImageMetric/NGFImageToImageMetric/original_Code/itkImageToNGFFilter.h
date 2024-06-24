@@ -52,18 +52,10 @@ public:
 	  typedef typename Superclass::OutputImageType::Pointer   OutputPointer;
 	  typedef typename Superclass::InputImageType             InputImageType;
 
-
-	itkGetMacro( Noise, double);
-	itkSetMacro( Noise, double);
-	
-
-	
 	  ImageToNGFFilter(); 
 
 	  virtual void Update(); 
-	  void aSetNoise(double noise); 
-	
-
+	  void SetNoise(double noise); 
 private:  
 	  typedef typename Superclass::InputImageRegionType RegionType;
 	  typedef typename GradientImageFilter<TInputImage>::OutputImageType GradientType; 

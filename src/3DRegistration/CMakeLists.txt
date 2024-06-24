@@ -24,34 +24,9 @@ if(WIN32)
   endif(CMAKE_COMPILER_IS_GNUCXX)
 endif(WIN32)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -fpermissive")
-
-ADD_SUBDIRECTORY(3DRecMultiTushort/src)
-ADD_SUBDIRECTORY(3DRecMultiTshort/src)
-ADD_SUBDIRECTORY(3DRecMultiTuchar/src)
-ADD_SUBDIRECTORY(3DRecMultiRushort/src)
-ADD_SUBDIRECTORY(3DRecMultiRshort/src)
-ADD_SUBDIRECTORY(3DRecMultiSushort/src)
-ADD_SUBDIRECTORY(3DRecMultiSshort/src)
-ADD_SUBDIRECTORY(3DRecMultiAushort/src)
-ADD_SUBDIRECTORY(3DRecMultiAshort/src)
-
-#ADD_SUBDIRECTORY(3DTto3Dversortfm/src)
-#ADD_SUBDIRECTORY(3DRecBspineMANGF2short/src)
-
-ADD_SUBDIRECTORY(3DRecBsplinesMANGFushort/src)
-ADD_SUBDIRECTORY(3DRecBsplinesushort/src)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -Wall -fpermissive")
 
 
-#ADD_SUBDIRECTORY(2DRecMultiAchar/src) #version1
-#ADD_SUBDIRECTORY(2DRecMultiAushort/src) #version1
-#ADD_SUBDIRECTORY(2DRecMultiBChar/src)
-#ADD_SUBDIRECTORY(2DRecMultiBuShort/src)
-#ADD_SUBDIRECTORY(2DRecMultiRchar/src)
-#ADD_SUBDIRECTORY(2DRecMultiRushort/src)
-#ADD_SUBDIRECTORY(2DRecMultiSchar/src)
-#ADD_SUBDIRECTORY(2DRecMultiSushort/src)
-#ADD_SUBDIRECTORY(2DRecMultiTchar/src)
+ADD_SUBDIRECTORY(3DRecBsplines_new/src)
 
- #ADD_SUBDIRECTORY(2DRecDemonsChar/src)
-#ADD_SUBDIRECTORY(UN/src)

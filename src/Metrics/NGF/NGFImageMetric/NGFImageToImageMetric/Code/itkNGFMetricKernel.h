@@ -61,7 +61,8 @@ public:
 	typedef typename FixedGF::PixelType  FV; 
 	typedef typename MovingGF::PixelType::RealValueType Real; 
 	typedef typename NGFIteratorTrait<MovingGF, MovingGF::ImageDimension>::ConstIterator GradientIteratorType; 
-	typedef std::auto_ptr<NGFKernel> Pointer; 
+	typedef std::unique_ptr<NGFKernel> Pointer;
+	// typedef std::auto_ptr<NGFKernel> Pointer; 
 	
 	/**
 	   Evalute the cost function value based on the given NGF vectors.
