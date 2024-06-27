@@ -6,7 +6,7 @@ endif()
 
 
 # This project is designed to be built outside the Insight source tree.
-project(PRJ_3DRecBsplines_new)
+project(PRJ_3DRegBsplines)
 
 # Find ITK.
 find_package(ITK REQUIRED)
@@ -17,6 +17,6 @@ find_package(Boost REQUIRED COMPONENTS program_options)
 
 if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})
-    add_executable(3DRecBsplines_new 3DRecBsplines_new.cxx)
-    target_link_libraries(3DRecBsplines_new ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
+    add_executable(3DRegBsplines 3DRegBsplines.cxx)
+    target_link_libraries(3DRegBsplines ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
 endif()

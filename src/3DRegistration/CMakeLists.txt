@@ -28,5 +28,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -Wall -fpermissive")
 
 
-ADD_SUBDIRECTORY(3DRecBsplines_new/src)
+ADD_SUBDIRECTORY(3DRegBsplines/src)
+ADD_SUBDIRECTORY(3DRegAffine/src)
 

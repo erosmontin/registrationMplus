@@ -83,3 +83,51 @@ void deb(std::string s)
 			std::cout << "-----------------here" <<s<< std::endl;
 
 }
+#include "itkImage.h"
+#include "itkRandomImageSource.h"
+
+template <typename TImage>
+typename TImage::Pointer CreateRandomImage(typename TImage::SizeType size)
+{
+    using RandomImageSource = itk::RandomImageSource<TImage>;
+    typename RandomImageSource::Pointer randomImageSource = RandomImageSource::New();
+
+
+    randomImageSource->SetSize(size);
+    randomImageSource->SetMin(0.0);  // minimum intensity value
+    randomImageSource->SetMax(255.0);  // maximum intensity value
+
+    randomImageSource->Update();
+
+    return randomImageSource->GetOutput();
+}
+
+
+
+template<typename TImage, typename TTransform>
+typename TImage::Pointer ApplyTransform(typename TImage::Pointer image, typename TTransform::Pointer transform)
+{
+    using ResampleFilterType = itk::ResampleImageFilter<TImage, TImage>;
+    typename ResampleFilterType::Pointer resampler = ResampleFilterType::New();
+
+    resampler->SetInput(image);
+    resampler->SetSize(image->GetLargestPossibleRegion().GetSize());
+    resampler->SetOutputOrigin(image->GetOrigin());
+    resampler->SetOutputSpacing(image->GetSpacing());
+    resampler->SetOutputDirection(image->GetDirection());
+    resampler->SetTransform(transform);
+    resampler->Update();
+
+    return resampler->GetOutput();
+}
+
+template<typename TImage>
+void SaveImage(typename TImage::Pointer image, const std::string& filename)
+{
+    using WriterType = itk::ImageFileWriter<TImage>;
+    typename WriterType::Pointer writer = WriterType::New();
+
+    writer->SetFileName(filename);
+    writer->SetInput(image);
+    writer->Update();
+}
