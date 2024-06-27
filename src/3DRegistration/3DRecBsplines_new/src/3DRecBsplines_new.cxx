@@ -17,6 +17,7 @@
 
 #include "itkTransformToDeformationFieldSource.h"
 #include "itkTransformFileWriter.h"
+#include "itkTransformFileReader.h"
 #include "../../Version.h"
 
 #include "../../../Metrics/NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkGetImageNoiseFunction.h"
@@ -30,6 +31,41 @@
 namespace po = boost::program_options;
 
 const unsigned int ImageDimension = 3;
+
+	typedef  float          PixelType;
+	typedef itk::Image< PixelType, ImageDimension >  FixedImageType;
+	typedef itk::Image< PixelType, ImageDimension >  MovingImageType;
+
+	const unsigned int SpaceDimension = ImageDimension;
+	const unsigned int SplineOrder = 3;
+	typedef double CoordinateRepType;
+
+	typedef itk::BSplineTransform<
+			CoordinateRepType,
+			SpaceDimension,
+			SplineOrder >     TransformType;
+
+
+	typedef itk::LBFGSBOptimizer       OptimizerType;
+
+
+	typedef itk::MANGFMSE<
+			FixedImageType,
+			MovingImageType >    MetricType;
+
+	typedef itk:: LinearInterpolateImageFunction<
+			MovingImageType,
+			double          >    InterpolatorType;
+
+	typedef itk::ImageRegistrationMethod<
+			FixedImageType,
+			MovingImageType >    RegistrationType;
+
+	MetricType::Pointer         metric        = MetricType::New();
+	OptimizerType::Pointer      optimizer     = OptimizerType::New();
+	InterpolatorType::Pointer   interpolator  = InterpolatorType::New();
+	RegistrationType::Pointer   registration  = RegistrationType::New();
+
 
 int main( int argc, char *argv[] )
 {
@@ -69,6 +105,7 @@ int main( int argc, char *argv[] )
         ("lbound", po::value<double>()->default_value(0), "Lower bound")
         ("ubound", po::value<double>()->default_value(0), "Upper bound")
         ("transformout,T", po::value<std::string>()->default_value("N"), "Output for transform")
+        ("transformin,W", po::value<std::string>()->default_value("N"), "Input no rigid transform for transform")
 		("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
@@ -114,7 +151,7 @@ for(const auto& it : vm) {
     std::string movingImageFN = vm["movingimage"].as<std::string>();
 
 	std::string ou = vm["outputimage"].as<std::string>();
-	std::string ouvf = vm["vfout"].as<std::string>();
+	std::string VOUT = vm["vfout"].as<std::string>();
 
 	int NT=vm["numberofthreads"].as<int>();
 	int NB=vm["mattesnumberofbins"].as<int>();
@@ -145,60 +182,12 @@ for(const auto& it : vm) {
 	double LBOUND=vm["lbound"].as<double>();
 	double UBOUND=vm["ubound"].as<double>();
 	std::string TOUT=vm["transformout"].as<std::string>();
+	std::string TIN=vm["transformin"].as<std::string>();
 	double DFLTPIXELVALUE=vm["dfltpixelvalue"].as<double>();
 	bool V=vm["verbose"].as<bool>();
 	std::string GRIDPOSITION=vm["gridposition"].as<std::string>();
 
-// #let's fix a few things
-	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
-	{
-		if (ETAF==-1)
-		{
-			ETAF=itk::GetImageNoise<FixedImageType>(fixedImage);
-		}
-		if (ETAM==-1)
-		{
-			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
-		}
-		printf("Fixed image noise: %f\n",ETAF);
-		printf("Moving image noise: %f\n",ETAM);
 
-	}
-
-
-	typedef  float          PixelType;
-	typedef itk::Image< PixelType, ImageDimension >  FixedImageType;
-	typedef itk::Image< PixelType, ImageDimension >  MovingImageType;
-
-	const unsigned int SpaceDimension = ImageDimension;
-	const unsigned int SplineOrder = 3;
-	typedef double CoordinateRepType;
-
-	typedef itk::BSplineTransform<
-			CoordinateRepType,
-			SpaceDimension,
-			SplineOrder >     TransformType;
-
-
-	typedef itk::LBFGSBOptimizer       OptimizerType;
-
-
-	typedef itk::MANGFMSE<
-			FixedImageType,
-			MovingImageType >    MetricType;
-
-	typedef itk:: LinearInterpolateImageFunction<
-			MovingImageType,
-			double          >    InterpolatorType;
-
-	typedef itk::ImageRegistrationMethod<
-			FixedImageType,
-			MovingImageType >    RegistrationType;
-
-	MetricType::Pointer         metric        = MetricType::New();
-	OptimizerType::Pointer      optimizer     = OptimizerType::New();
-	InterpolatorType::Pointer   interpolator  = InterpolatorType::New();
-	RegistrationType::Pointer   registration  = RegistrationType::New();
 
 	registration->SetMetric(        metric        );
 	registration->SetOptimizer(     optimizer     );
@@ -242,6 +231,21 @@ for(const auto& it : vm) {
 	FixedImageType::DirectionType meshdirection = fixedImage->GetDirection();
 	FixedImageType::SizeType meshsize = fixedImage->GetLargestPossibleRegion().GetSize();
 
+// #let's fix a few things
+	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
+	{
+		if (ETAF==-1)
+		{
+			ETAF=itk::GetImageNoise<FixedImageType>(fixedImage);
+		}
+		if (ETAM==-1)
+		{
+			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
+		}
+		printf("Fixed image noise: %f\n",ETAF);
+		printf("Moving image noise: %f\n",ETAM);
+
+	}
 
 	if (GRIDPOSITION!="N"){
 		//read the image that specifies the position of the grid
@@ -291,7 +295,7 @@ for(const auto& it : vm) {
 	transform->SetTransformDomainDirection( fixedImage->GetDirection() );
 	transform->SetIdentity();
 
-
+	
 	//metric is negative
 	optimizer->MinimizeOn();
 	typedef TransformType::ParametersType     ParametersType;
@@ -341,8 +345,29 @@ for(const auto& it : vm) {
 	OptimizerType::BoundValueType lowerBound( numParameters );
 
 	boundSelect.Fill( BOUND );
+	std::cout<<"Optimization Bound"<<BOUND<<std::endl;
+	switch (BOUND)
+	{
+	case 1:
+		lowerBound.Fill(  LBOUND);
+		std::cout<<"Lower Bound"<<LBOUND<<std::endl;
+		break;
+	case 2:
+		lowerBound.Fill( LBOUND );
+		upperBound.Fill( UBOUND );
+		std::cout<<"Lower Bound"<<LBOUND<<" and "<<"Upper Bound"<<UBOUND<<std::endl;
+		break;
+	case 3:
+		upperBound.Fill( UBOUND );
+		std::cout<<"Upper Bound"<<UBOUND<<std::endl;
+		break;	
+	default:
+		std::cout<<"Ubounded "<<UBOUND<<std::endl;
+		break;
+	}
+
 	upperBound.Fill( UBOUND );
-	lowerBound.Fill(  LBOUND);
+	
 
 	optimizer->SetBoundSelection( boundSelect );
 	optimizer->SetUpperBound( upperBound );
@@ -359,12 +384,19 @@ for(const auto& it : vm) {
 	optimizer->SetMaximumNumberOfEvaluations( NE );
 	optimizer->SetMaximumNumberOfCorrections( NC);
 
-	std::cout<<"\nUpper"<<upperBound[0]<<std::endl;
-
-	std::cout<<"\nLower"<<lowerBound[0]<<std::endl;
-
 	optimizer->SetMinimize(true);
 
+	if (TIN!="N")
+	{
+		typedef itk::TransformFileReader TransformReaderType;
+		TransformReaderType::Pointer transformReader = TransformReaderType::New();
+		transformReader->SetFileName( TIN );
+		transformReader->Update();
+		transform=dynamic_cast<TransformType*>(transformReader->GetTransformList()->front().GetPointer());
+
+		
+		registration->SetInitialTransformParameters( transform->GetParameters() );
+	}
 
 	std::cout << "Starting Registration "
 			<< std::endl;
@@ -463,7 +495,7 @@ for(const auto& it : vm) {
 	}
 
 
-	if (ouvf!="N")
+	if (VOUT!="N")
 	{
 		typedef itk::Vector< float,  ImageDimension >  VectorType2;
 		typedef itk::Image< VectorType2,  ImageDimension >   OutputTransformationImageType2;
@@ -475,7 +507,7 @@ for(const auto& it : vm) {
 		typedef itk::ImageFileWriter< OutputTransformationImageType2>TransformToDeformationFieldSourceWriterType;
 		TransformToDeformationFieldSourceWriterType::Pointer rtd = TransformToDeformationFieldSourceWriterType::New();
 		rtd->SetInput(td->GetOutput());
-		rtd->SetFileName(ouvf);
+		rtd->SetFileName(VOUT);
 		rtd->Update();
 	};
 
