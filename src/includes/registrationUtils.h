@@ -41,8 +41,23 @@ public:
     typedef  itk::Command             Superclass;
     typedef itk::SmartPointer<Self>   Pointer;
     itkNewMacro( Self );
+    
+    short int m_NumberOfLevels;
+    itkSetMacro(NumberOfLevels, short int);
+    itkGetMacro(NumberOfLevels, short int   );
+
+    double m_LevelsDivisor;
+    itkSetMacro(LevelsDivisor, double);
+    itkGetMacro(LevelsDivisor, double);
+
+    std::string m_FileName;
+    itkSetMacro(FileName, std::string);
+    itkGetMacro(FileName, std::string);
+
+    
+
 protected:
-    RegularStepGradientDescentOptimizeCommandIterationUpdate() {};
+    RegularStepGradientDescentOptimizeCommandIterationUpdate(): m_NumberOfLevels(1) , m_LevelsDivisor(1.0)  {};
 public:
     typedef itk::RegularStepGradientDescentOptimizer    OptimizerType;
     typedef   const OptimizerType * OptimizerPointer;
@@ -57,9 +72,29 @@ public:
         {
             return;
         }
-        std::cout << optimizer->GetCurrentIteration() << "   ";
+        long int iteration = optimizer->GetCurrentIteration();
+        if (iteration == 0)
+        {
+            std::cout << "Iteration   Value Gadient  stepLength" << std::endl;
+
+        }
+        int MAXNUBEROFITERATIONS = optimizer->GetNumberOfIterations();
+        int nperlevel = MAXNUBEROFITERATIONS / m_NumberOfLevels;
+        if (iteration % nperlevel == 0)
+        {
+            optimizer->SetMaximumStepLength(optimizer->GetMaximumStepLength() / m_LevelsDivisor);
+            optimizer->SetMinimumStepLength(optimizer->GetMinimumStepLength() / m_LevelsDivisor);
+            std::cout << "Level " << iteration / nperlevel << " new MAXIMUM StepLength: " << optimizer->GetMaximumStepLength() << " new MINIMUM StepLength: " << optimizer->GetMinimumStepLength() << std::endl;
+
+        }
+        std::cout << iteration << "   ";
         std::cout << optimizer->GetValue() << "   ";
-    std::cout << optimizer->GetGradientMagnitudeTolerance() << std::endl;
+        std::cout << optimizer->GetGradient() << "   ";
+    // std::cout << optimizer->GetGradientMagnitudeTolerance() << "   ";
+    // std::cout << optimizer->GetCurrentPosition() << "   ";
+
+    std::cout << optimizer->GetCurrentStepLength() << std::endl;
+
     }
 };
 

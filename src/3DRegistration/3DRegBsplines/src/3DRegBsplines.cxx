@@ -73,7 +73,7 @@ int main( int argc, char *argv[] )
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
-	"Allowed options for mu MI + lambda NGF +  nu MSE");
+	"Allowed options for alpha MI + lambda NGF +  nu MSE");
     desc.add_options()
 	    ("help,h", "produce help message")
         ("fixedimage,f", po::value<std::string>(), "Fixed image filename")
@@ -81,8 +81,8 @@ int main( int argc, char *argv[] )
         ("outputimage,o", po::value<std::string>(), "Output registered imagefilename")
         ("vfout,v", po::value<std::string>()->default_value("N"), "VF output filename")
         ("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")
-	    ("mu", po::value<double>()->default_value(1.0), "mu value MI 1.0")
-		("muderivative,M", po::value<double>()->default_value(1.0), "mu derivative MI 1.0")
+	    ("alpha,a", po::value<double>()->default_value(1.0), "alpha value MI 1.0")
+		("alphaderivative,A", po::value<double>()->default_value(1.0), "alpha derivative MI 1.0")
 		("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")
         ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
 	    ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
@@ -156,8 +156,8 @@ for(const auto& it : vm) {
 	int NT=vm["numberofthreads"].as<int>();
 	int NB=vm["mattesnumberofbins"].as<int>();
     double MAPERCENTAGE = vm["mattespercentage"].as<double>();
-	double MU = vm["mu"].as<double>();
-	double MUDERIVATIVE = vm["muderivative"].as<double>();
+	double ALPHA = vm["alpha"].as<double>();
+	double ALPHADERIVATIVE = vm["alphaderivative"].as<double>();
 	double NU = vm["nu"].as<double>();
 	double NUDERIVATIVE = vm["nuderivative"].as<double>();
     double LAMBDA = vm["lambda"].as<double>();
@@ -314,8 +314,8 @@ for(const auto& it : vm) {
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 	const unsigned int numberOfSamplesMA =static_cast< unsigned int >( numberOfPixels * MAPERCENTAGE );
 
-	metric->SetMu(MU);
-	metric->SetMuDerivative(MUDERIVATIVE);
+	metric->SetAlpha(ALPHA);
+	metric->SetAlphaDerivative(ALPHADERIVATIVE);
 	metric->SetMSENumberOfSamples(numberOfSamplesMA);
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);

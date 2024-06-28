@@ -53,7 +53,9 @@ public:
 
 	itkGetMacro( UseExplicitPDFDerivatives, bool);
 	itkSetMacro( UseExplicitPDFDerivatives, bool);
-	
+
+	itkGetMacro( NormalizeDerivatives, bool);
+	itkSetMacro( NormalizeDerivatives, bool);	
 	
 	itkGetMacro( NGFNumberOfSamples, unsigned int);
 	itkSetMacro( NGFNumberOfSamples, unsigned int);
@@ -71,11 +73,11 @@ public:
 	itkGetMacro( Evaluator, char);
 	itkSetMacro( Evaluator, char);
 	
-	itkGetMacro( Mu, double);
-	itkSetMacro( Mu, double);
+	itkGetMacro( Alpha, double);
+	itkSetMacro( Alpha, double);
 	
-	itkGetMacro( MuDerivative, double);
-	itkSetMacro( MuDerivative, double);
+	itkGetMacro( AlphaDerivative, double);
+	itkSetMacro( AlphaDerivative, double);
 	
 	itkGetMacro( Nu, double);
 	itkSetMacro( Nu, double);
@@ -134,7 +136,9 @@ public:
 			DerivativeType & Derivative) const;
 	void GetNGFDerivative(const ParametersType & parameters,
 			DerivativeType & Derivative) const;
-
+	void GetMSEDerivative(const ParametersType & parameters,
+			DerivativeType & Derivative) const;
+	void NormalizeDerivative(DerivativeType & Derivative) const;
 	/**  Get the value and derivatives for single valued optimizers. */
 	void GetValueAndDerivative(const ParametersType & parameters,MeasureType & Value,DerivativeType & Derivative) const;
 
@@ -151,12 +155,13 @@ public:
 	double m_LambdaDerivative;
 	unsigned int m_NumberOfThreads;
 	char m_Evaluator;
-	double m_Mu;
-	double m_MuDerivative;
+	double m_Alpha;
+	double m_AlphaDerivative;
 	double m_Nu;
 	double m_NuDerivative;
 	bool m_UseCachingOfBSplineWeights;
 	bool m_UseExplicitPDFDerivatives;
+	bool m_NormalizeDerivatives;
 
 protected:
 

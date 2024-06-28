@@ -64,9 +64,9 @@ int main( int argc, char *argv[] )
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
-	"Allowed options for mu MI + lambda NGF +  nu MSE");
+	"Allowed options for alpha MI + lambda NGF +  nu MSE");
     std::string method;
-
+	bool ND=false;
 	desc.add_options()
 	    ("help,h", "produce help message")
         ("fixedimage,f", po::value<std::string>(), "Fixed image filename")
@@ -74,9 +74,9 @@ int main( int argc, char *argv[] )
         ("outputimage,o", po::value<std::string>(), "Output registered imagefilename")
         ("vfout,v", po::value<std::string>()->default_value("N"), "VF output filename")
         ("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")
-	    ("mu", po::value<double>()->default_value(1.0), "mu value MI 1.0")
+	    ("alpha,a", po::value<double>()->default_value(1.0), "alpha value MI 1.0")
+		("alphaderivative,A", po::value<double>()->default_value(1.0), "alpha derivative MI 1.0")
 		("subtype", po::value<std::string>(&method)->default_value("affine"), "Subtype (translation, rotation, scaling, affine)")
-		("muderivative,M", po::value<double>()->default_value(1.0), "mu derivative MI 1.0")
 		("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")
         ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
 		("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
@@ -89,12 +89,15 @@ int main( int argc, char *argv[] )
 		("nuderivative,N", po::value<double>()->default_value(1.0), "nu MSE derivative 1.0")
         ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
 		("minimumsteplength,S", po::value<double>()->default_value(0.1), "Minimum step length")
+		("maximumsteplength,X", po::value<double>()->default_value(1.0), "Maximum step length")
+		("relaxationfactor,R", po::value<double>()->default_value(0.5), "Relaxation factor")
+		("gradientmagnitudetolerance,G", po::value<double>()->default_value(1e-4), "Gradient magnitude tolerance")
 		("fixedimagethreshold,t", po::value<double>()->default_value(-99999999), "Fixed image threshold")
         ("transformout,T", po::value<std::string>()->default_value("N"), "Output for transform")
         ("transformin,W", po::value<std::string>()->default_value("N"), "Input no rigid transform for transform")
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
-
+		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
     ;
 	
 
@@ -141,8 +144,8 @@ for(const auto& it : vm) {
 	int NT=vm["numberofthreads"].as<int>();
 	int NB=vm["mattesnumberofbins"].as<int>();
     double MAPERCENTAGE = vm["mattespercentage"].as<double>();
-	double MU = vm["mu"].as<double>();
-	double MUDERIVATIVE = vm["muderivative"].as<double>();
+	double ALPHA = vm["alpha"].as<double>();
+	double ALPHADERIVATIVE = vm["alphaderivative"].as<double>();
 	double NU = vm["nu"].as<double>();
 	double NUDERIVATIVE = vm["nuderivative"].as<double>();
     double LAMBDA = vm["lambda"].as<double>();
@@ -163,7 +166,10 @@ for(const auto& it : vm) {
 	std::string TIN=vm["transformin"].as<std::string>();
 	double DFLTPIXELVALUE=vm["dfltpixelvalue"].as<double>();
 	double MINSTEP=vm["minimumsteplength"].as<double>();
-	
+	double MAXSTEP=vm["maximumsteplength"].as<double>();
+	double RF=vm["relaxationfactor"].as<double>();
+	double GMT=vm["gradientmagnitudetolerance"].as<double>();
+
 
 
 
@@ -251,6 +257,12 @@ for(const auto& it : vm) {
   optimizer->SetScales(optimizerScales);
   optimizer->SetNumberOfIterations(NI);
   optimizer->SetMinimumStepLength(MINSTEP);
+  optimizer->SetRelaxationFactor(RF);
+  optimizer->SetGradientMagnitudeTolerance(GMT);
+  optimizer->SetMaximumStepLength(MAXSTEP);
+
+
+
 if (method == "translation") {
     // Only optimize translation parameters
     for (int i = 0; i < 9; ++i) {
@@ -292,8 +304,8 @@ if (method == "translation") {
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 	const unsigned int numberOfSamplesMA =static_cast< unsigned int >( numberOfPixels * MAPERCENTAGE );
 
-	metric->SetMu(MU);
-	metric->SetMuDerivative(MUDERIVATIVE);
+	metric->SetAlpha(ALPHA);
+	metric->SetAlphaDerivative(ALPHADERIVATIVE);
 	metric->SetMSENumberOfSamples(numberOfSamplesMA);
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
@@ -303,8 +315,9 @@ if (method == "translation") {
 	metric->SetLambda(LAMBDA);
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
 	metric->SetNGFNumberOfSamples(numberOfSamplesMA);
-
+	metric->SetNormalizeDerivatives(ND);
 	metric->SetNumberOfThreads(NT);
+
 
 	
 	metric->SetFixedEta(ETAF);
@@ -365,6 +378,8 @@ if (method == "translation") {
 			std::cout << "Initial transform parameters rec " << init_ << std::endl;
 
 	RegularStepGradientDescentOptimizeCommandIterationUpdate::Pointer observer = RegularStepGradientDescentOptimizeCommandIterationUpdate::New();
+	observer->SetNumberOfLevels(5);
+	observer->SetLevelsDivisor(10);
 	optimizer->AddObserver( itk::IterationEvent(), observer );
       // Add a time probe
     itk::TimeProbesCollectorBase   chronometer;
