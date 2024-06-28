@@ -1,7 +1,7 @@
 #ifndef __itkMANGFMSE_hxx
 #define __itkMANGFMSE_hxx
 
-#include "itkMANGFMSE.h"
+#include "itkMplus.h"
 #include "../NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkNGFMetricKernel.h"
 
 namespace itk
@@ -10,17 +10,19 @@ namespace itk
 	 * Constructor
 	 */
 	template <class TFixedImage, class TMovingImage>
-	MANGFMSE<TFixedImage, TMovingImage>::MANGFMSE()
+	Mplus<TFixedImage, TMovingImage>::Mplus()
 	{
 		m_MA = MattesType::New();
 		m_NGF = NGFType::New();
 		m_MSE = MSEType::New();
+		m_NMI = NMIType::New();
 		m_INTERNALL_interpolator = LFType::New();
 		m_Lambda = 1.0;
 		m_LambdaDerivative = m_Lambda;
 		m_NGFNumberOfSamples = 20000;
 		m_MANumberOfSamples = 20000;
 		m_MSENumberOfSamples = 20000;
+		m_NMINumberOfSamples = 20000;
 		m_BinNumbers = 50;
 		m_NumberOfThreads = 1;
 		m_Evaluator = 0;
@@ -30,6 +32,8 @@ namespace itk
 		m_AlphaDerivative = 1.0;
 		m_Nu = 1.0;
 		m_NuDerivative = 1.0;
+		m_Yota = 1.0;
+		m_YotaDerivative = 1.0;
 
 		m_UseCachingOfBSplineWeights = true;
 		m_UseExplicitPDFDerivatives = true;
@@ -37,27 +41,16 @@ namespace itk
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::NormalizeDerivative(DerivativeType &derivative) const
+	Mplus<TFixedImage, TMovingImage>::NormalizeDerivative(DerivativeType &derivative) const
 	{
 		if (m_NormalizeDerivatives)
-		{
-
-double minVal = *std::min_element(derivative.begin(), derivative.end());
-double maxVal = *std::max_element(derivative.begin(), derivative.end());
-// Check if maxVal and minVal are not equal to avoid division by zero
-if (maxVal != minVal)
 {
-	#pragma omp parallel for
-	for (unsigned int i = 0; i < derivative.size(); ++i)
-	{
-		derivative[i] = 2 * (derivative[i] - minVal) / (maxVal - minVal) - 1;
-	}
+		this->NormalizeComponents(derivative);
 }
-		}
 	}
 
 	template <class TFixedImage, class TMovingImage>
-	MANGFMSE<TFixedImage, TMovingImage>::~MANGFMSE() {}
+	Mplus<TFixedImage, TMovingImage>::~Mplus() {}
 
 	/**
 	 * Initialize
@@ -65,7 +58,7 @@ if (maxVal != minVal)
 
 	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::Initialize(void)
+	Mplus<TFixedImage, TMovingImage>::Initialize(void)
 	{
 
 		Superclass::Initialize();
@@ -111,6 +104,28 @@ if (maxVal != minVal)
 		m_NGF->SetMovingNoise(this->m_MovingEta);
 		m_NGF->SetFixedImageRegion(inputRegion);
 
+
+
+		m_NMI->SetFixedImage(this->m_FixedImage);
+		m_NMI->SetMovingImage(this->m_MovingImage);
+		m_NMI->SetInterpolator(this->m_Interpolator);
+		m_NMI->SetTransform(this->m_Transform);
+		m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+		m_NMI->SetNumberOfThreads(this->m_NumberOfThreads);
+itk::Array<double> lowerBound(1);
+lowerBound[0] = 0;
+m_NMI->SetLowerBound(lowerBound);		
+itk::Array<double> upperBound(1);
+upperBound[0] = 255;
+m_NMI->SetUpperBound(upperBound);
+		m_NMI->ReinitializeSeed();
+		m_NMI->Initialize();
+		m_NMI->SetNumberOfFixedImageSamples(this->m_NMINumberOfSamples);
+		m_NMI->SetPaddingValue(0);
+		m_NMI->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
+		m_NMI->UseAllPixelsOff();
+
+
 		switch (m_Evaluator)
 		{
 		case (0):
@@ -153,10 +168,10 @@ if (maxVal != minVal)
 	}
 
 	template <class TFixedImage, class TMovingImage>
-	typename MANGFMSE<TFixedImage, TMovingImage>::MeasureType
-	MANGFMSE<TFixedImage, TMovingImage>::GetValue(const ParametersType &parameters) const
+	typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>::GetValue(const ParametersType &parameters) const
 	{
-		double a, b, c;
+		double a, b, c, d;
 
 		a = 0.0;
 		if (this->m_Alpha != 0.0)
@@ -167,33 +182,46 @@ if (maxVal != minVal)
 		c = 0.0;
 		if (this->m_Nu != 0.0)
 			c = this->GetMSEValue(parameters);
-		return a + b + c;
+		d = 0.0;
+		if (this->m_Yota != 0.0)
+			d = this->GetNMIValue(parameters);
+		return a + b + c + d;
 	}
 
 	template <class TFixedImage, class TMovingImage>
-	typename MANGFMSE<TFixedImage, TMovingImage>::MeasureType
-	MANGFMSE<TFixedImage, TMovingImage>::GetNGFValue(const ParametersType &parameters) const
+	typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>::GetNGFValue(const ParametersType &parameters) const
 	{
 		return static_cast<MeasureType>(m_NGF->GetValue(parameters) * this->m_Lambda);
 	}
 
 	template <class TFixedImage, class TMovingImage>
-	typename MANGFMSE<TFixedImage, TMovingImage>::MeasureType
-	MANGFMSE<TFixedImage, TMovingImage>::GetMAValue(const ParametersType &parameters) const
+	typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>::GetMAValue(const ParametersType &parameters) const
 	{
 		return static_cast<MeasureType>(m_MA->GetValue(parameters) * this->m_Alpha);
 	}
 
 	template <class TFixedImage, class TMovingImage>
-	typename MANGFMSE<TFixedImage, TMovingImage>::MeasureType
-	MANGFMSE<TFixedImage, TMovingImage>::GetMSEValue(const ParametersType &parameters) const
+	typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>::GetMSEValue(const ParametersType &parameters) const
 	{
 		return static_cast<MeasureType>(m_MSE->GetValue(parameters) * this->m_Nu);
 	}
 
 	template <class TFixedImage, class TMovingImage>
+	typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
+	{
+		std::cout << "NMI: " << m_Yota << std::endl;
+		return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
+	}
+
+
+
+	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::GetDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	Mplus<TFixedImage, TMovingImage>::GetDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 
 		DerivativeType a;
@@ -216,32 +244,44 @@ if (maxVal != minVal)
 			this->GetMSEDerivative(parameters, c);
 		else
 			c.Fill(0.0);
+		
+		DerivativeType d;
+		d = parameters;
+		if (this->m_YotaDerivative != 0.0)
+			this->GetNMIDerivative(parameters, d);
+		else
+			d.Fill(0.0);
 
 		derivative = a;
-double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this->m_NuDerivative;
+double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this->m_NuDerivative+ this->m_YotaDerivative;
 #pragma omp parallel for
 		for (long unsigned int p = 0; p < derivative.GetSize(); p++)
 		{	
-			derivative[p] = a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p];
+			derivative[p] = a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p] + this->m_YotaDerivative * d[p];
 			derivative[p] = derivative[p] / derivativeSum;	
 		}
 	}
 
 	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::GetMADerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	Mplus<TFixedImage, TMovingImage>::GetMADerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
-
 		m_MA->GetDerivative(parameters, derivative);
 		// normalize the derivative
 		this->NormalizeDerivative(derivative);
-
-
 	}
 
 	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::GetNGFDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	Mplus<TFixedImage, TMovingImage>::GetNMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	{
+		m_NMI->GetDerivative(parameters, derivative);
+		
+		this->NormalizeDerivative(derivative);
+	}
+	template <class TFixedImage, class TMovingImage>
+	void
+	Mplus<TFixedImage, TMovingImage>::GetNGFDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 
 		m_NGF->GetDerivative(parameters, derivative);
@@ -252,7 +292,7 @@ double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this
 
 	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::GetMSEDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	Mplus<TFixedImage, TMovingImage>::GetMSEDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 		m_MSE->GetDerivative(parameters, derivative);
 
@@ -262,7 +302,7 @@ double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this
 
 	template <class TFixedImage, class TMovingImage>
 	void
-	MANGFMSE<TFixedImage, TMovingImage>::GetValueAndDerivative(const ParametersType &parameters, MeasureType &Value, DerivativeType &Derivative) const
+	Mplus<TFixedImage, TMovingImage>::GetValueAndDerivative(const ParametersType &parameters, MeasureType &Value, DerivativeType &Derivative) const
 	{
 		Value = this->GetValue(parameters);
 		this->GetDerivative(parameters, Derivative);
@@ -270,7 +310,7 @@ double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this
 
 	template <class TImageType, class TMovingImage>
 	void
-	MANGFMSE<TImageType, TMovingImage>::
+	Mplus<TImageType, TMovingImage>::
 		PrintSelf(std::ostream &os, Indent indent) const
 	{
 		Superclass::PrintSelf(os, indent);

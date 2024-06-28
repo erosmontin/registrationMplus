@@ -1,5 +1,5 @@
 #include "itkImageRegistrationMethod.h"
-#include "../../../Metrics/Mplus/itkMANGFMSE.h"
+#include "../../../Metrics/Mplus/itkMplus.h"
 #include "itkBSplineTransform.h"
 #include "itkLBFGSBOptimizer.h"
 #include "itkImageFileReader.h"
@@ -41,7 +41,7 @@ const unsigned int ImageDimension = 3;
 	typedef itk::AffineTransform<double, 3> TransformType;
 
 
-	typedef itk::MANGFMSE<
+	typedef itk::Mplus<
 			FixedImageType,
 			MovingImageType >    MetricType;
 
@@ -64,9 +64,11 @@ int main( int argc, char *argv[] )
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
-	"Allowed options for alpha MI + lambda NGF +  nu MSE");
+	"Allowed options for alpha MI + lambda NGF +  nu MSE +yota NMI\n\n");
     std::string method;
 	bool ND=false;
+	double YOTA=0.1;
+	double YOTADERIVATIVE=0;
 	desc.add_options()
 	    ("help,h", "produce help message")
         ("fixedimage,f", po::value<std::string>(), "Fixed image filename")
@@ -98,7 +100,10 @@ int main( int argc, char *argv[] )
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
 		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
-    ;
+   
+        ("yota,y", po::value<double>(&YOTA)->default_value(0.1), "Yota value NMI 0.1")
+        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
+ ;
 	
 
 
@@ -318,6 +323,8 @@ if (method == "translation") {
 	metric->SetNormalizeDerivatives(ND);
 	metric->SetNumberOfThreads(NT);
 
+	metric->SetYota(YOTA);
+	metric->SetYotaDerivative(YOTADERIVATIVE);
 
 	
 	metric->SetFixedEta(ETAF);
@@ -366,7 +373,7 @@ if (method == "translation") {
 
 	// SaveImage<movingImageType>(ApplyTransform<MovingImageType, TransformType>(movingImageReader->GetOutput(), transform));
 	
-	std::cout<< "\n\n\n\n Affine Transform using itkMANGFMSE	\n\tThread: "<< metric->GetNumberOfThreads() <<
+	std::cout<< "\n\n\n\n Affine Transform using itkMplus	\n\tThread: "<< metric->GetNumberOfThreads() <<
 			"\nVariables: " <<transform->GetNumberOfParameters() <<
 
 			std::endl;
@@ -377,9 +384,8 @@ if (method == "translation") {
 			init_ = registration->GetInitialTransformParameters();
 			std::cout << "Initial transform parameters rec " << init_ << std::endl;
 
-	RegularStepGradientDescentOptimizeCommandIterationUpdate::Pointer observer = RegularStepGradientDescentOptimizeCommandIterationUpdate::New();
-	observer->SetNumberOfLevels(5);
-	observer->SetLevelsDivisor(10);
+	RegularStepGradientDescentOptimizerCommandIterationUpdate::Pointer observer = RegularStepGradientDescentOptimizerCommandIterationUpdate::New();
+
 	optimizer->AddObserver( itk::IterationEvent(), observer );
       // Add a time probe
     itk::TimeProbesCollectorBase   chronometer;

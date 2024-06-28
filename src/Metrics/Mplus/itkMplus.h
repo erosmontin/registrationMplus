@@ -1,8 +1,8 @@
 /*=========================================================================
 Eta is defined as the Habe rdefinition of NGF, different by the itk implemntation (downloaded and add).
  *=========================================================================*/
-#ifndef __itkMANGFMSE_h
-#define __itkMANGFMSE_h
+#ifndef __itkMplus_h
+#define __itkMplus_h
 
 #include "itkImageToImageMetric.h"
 #include "itkMattesMutualInformationImageToImageMetric.h"
@@ -10,16 +10,17 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkMeanSquaresImageToImageMetric.h"
 
+#include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
 namespace itk
 {
 template <class TFixedImage, class TMovingImage>
-class ITK_EXPORT MANGFMSE:
+class ITK_EXPORT Mplus:
 public ImageToImageMetric<TFixedImage, TMovingImage>
 {
 public:
 
 	/** Standard class typedefs. */
-	typedef MANGFMSE     Self;
+	typedef Mplus     Self;
 	typedef ImageToImageMetric<TFixedImage, TMovingImage> Superclass;
 	typedef SmartPointer<Self>                            Pointer;
 	typedef SmartPointer<const Self>                      ConstPointer;
@@ -30,7 +31,7 @@ public:
 	itkNewMacro(Self);
 
 	/** Run-time type information (and related methods). */
-	itkTypeMacro(MANGFMSE,
+	itkTypeMacro(Mplus,
 			ImageToImageMetric);
 
 	itkGetMacro( Lambda, double);
@@ -47,6 +48,8 @@ public:
 	
 	itkGetMacro( MSENumberOfSamples, unsigned int);
 	itkSetMacro( MSENumberOfSamples, unsigned int);
+
+
 
 	itkGetMacro( UseCachingOfBSplineWeights, bool);
 	itkSetMacro( UseCachingOfBSplineWeights, bool);
@@ -84,6 +87,13 @@ public:
 	
 	itkGetMacro( NuDerivative, double);
 	itkSetMacro( NuDerivative, double);
+
+	itkGetMacro( Yota, double);
+	itkSetMacro( Yota, double);
+
+	itkGetMacro( YotaDerivative, double);
+	itkSetMacro( YotaDerivative, double);
+
 
 
 
@@ -128,6 +138,7 @@ public:
 	MeasureType GetNGFValue(const ParametersType & parameters) const;
 	MeasureType GetMAValue(const ParametersType & parameters) const;
 	MeasureType GetMSEValue(const ParametersType & parameters) const;
+	MeasureType GetNMIValue(const ParametersType & parameters) const;
 
 	/** Get the derivatives of the match measure. */
 	void GetDerivative(const ParametersType & parameters,
@@ -138,21 +149,60 @@ public:
 			DerivativeType & Derivative) const;
 	void GetMSEDerivative(const ParametersType & parameters,
 			DerivativeType & Derivative) const;
+	void GetNMIDerivative(const ParametersType & parameters,
+			DerivativeType & Derivative) const;
 	void NormalizeDerivative(DerivativeType & Derivative) const;
 	/**  Get the value and derivatives for single valued optimizers. */
 	void GetValueAndDerivative(const ParametersType & parameters,MeasureType & Value,DerivativeType & Derivative) const;
 
 	//void SetRegularizationTerm(double s);
+	void NormalizeComponents(DerivativeType & derivative)
+	{
+			double norm = 0.0;
+	#pragma omp parallel for reduction(+:norm)
+	for (unsigned int i = 0; i < derivative.size(); ++i) {
+		norm += derivative[i] * derivative[i];
+	}
+	norm = std::sqrt(norm);
 
+	// Check if norm is not zero to avoid division by zero
+	if (norm != 0.0) {
+		#pragma omp parallel for
+		for (unsigned int i = 0; i < derivative.size(); ++i) {
+			derivative[i] /= norm;
+		}
+	}
+	}
+
+	void RescaleComponents(DerivativeType & derivative)
+	{
+			{
+
+double minVal = *std::min_element(derivative.begin(), derivative.end());
+double maxVal = *std::max_element(derivative.begin(), derivative.end());
+// Check if maxVal and minVal are not equal to avoid division by zero
+if (maxVal != minVal)
+{
+	#pragma omp parallel for
+	for (unsigned int i = 0; i < derivative.size(); ++i)
+	{
+		derivative[i] = 2 * (derivative[i] - minVal) / (maxVal - minVal) - 1;
+	}
+}
+		}
+	}
 
 	int m_BinNumbers;
 	unsigned int m_MANumberOfSamples;
 	unsigned int m_NGFNumberOfSamples;
 	unsigned int m_MSENumberOfSamples;
+	unsigned int m_NMINumberOfSamples;
 	double m_FixedEta;
 	double m_MovingEta;
 	double m_Lambda;
 	double m_LambdaDerivative;
+	double m_Yota;
+	double m_YotaDerivative;
 	unsigned int m_NumberOfThreads;
 	char m_Evaluator;
 	double m_Alpha;
@@ -165,13 +215,14 @@ public:
 
 protected:
 
-	MANGFMSE();
-	virtual ~MANGFMSE();
+	Mplus();
+	virtual ~Mplus();
 	void PrintSelf(std::ostream & os, Indent indent) const;
 	typedef MattesMutualInformationImageToImageMetric<FixedImageType,MovingImageType> MattesType;
 	typedef NormalizedGradientFieldImageToImageMetric<FixedImageType,MovingImageType> NGFType;
 	typedef LinearInterpolateImageFunction<FixedImageType,double > LFType;
 	typedef MeanSquaresImageToImageMetric<FixedImageType,MovingImageType> MSEType;
+	typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
 
 
 
@@ -183,7 +234,7 @@ protected:
 
 private:
 	// purposely not implemented
-	MANGFMSE(const Self &);
+	Mplus(const Self &);
 	// purposely not implemented
 	void operator=(const Self &);
 
@@ -191,6 +242,7 @@ private:
 	typename MattesType::Pointer m_MA;
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
+	typename NMIType::Pointer m_NMI;
 	typename LFType::Pointer m_INTERNALL_interpolator;
 	//typename MSEType::Pointer m_MSE_INTERNALL_interpolator;
 
@@ -203,7 +255,7 @@ private:
 } // end namespace itk
 
 #ifndef ITK_MANUAL_INSTANTIATION
-#include "itkMANGFMSE.hxx"
+#include "itkMplus.hxx"
 #endif
 
 #endif

@@ -34,30 +34,23 @@ public:
 };
 
 #include <itkRegularStepGradientDescentOptimizer.h>
-class RegularStepGradientDescentOptimizeCommandIterationUpdate : public itk::Command
+class RegularStepGradientDescentOptimizerCommandIterationUpdate : public itk::Command
 {
 public:
-    typedef  RegularStepGradientDescentOptimizeCommandIterationUpdate   Self;
+    typedef  RegularStepGradientDescentOptimizerCommandIterationUpdate   Self;
     typedef  itk::Command             Superclass;
     typedef itk::SmartPointer<Self>   Pointer;
     itkNewMacro( Self );
-    
-    short int m_NumberOfLevels;
-    itkSetMacro(NumberOfLevels, short int);
-    itkGetMacro(NumberOfLevels, short int   );
 
-    double m_LevelsDivisor;
-    itkSetMacro(LevelsDivisor, double);
-    itkGetMacro(LevelsDivisor, double);
 
-    std::string m_FileName;
-    itkSetMacro(FileName, std::string);
-    itkGetMacro(FileName, std::string);
+    bool m_ShowGradient;
+    itkSetMacro(ShowGradient, bool);
+    itkGetMacro(ShowGradient, bool);
 
     
 
 protected:
-    RegularStepGradientDescentOptimizeCommandIterationUpdate(): m_NumberOfLevels(1) , m_LevelsDivisor(1.0)  {};
+    RegularStepGradientDescentOptimizerCommandIterationUpdate(): m_ShowGradient((bool)0)  {};
 public:
     typedef itk::RegularStepGradientDescentOptimizer    OptimizerType;
     typedef   const OptimizerType * OptimizerPointer;
@@ -75,23 +68,22 @@ public:
         long int iteration = optimizer->GetCurrentIteration();
         if (iteration == 0)
         {
-            std::cout << "Iteration   Value Gadient  stepLength" << std::endl;
+            std::cout << "Iteration, Value, " << " ";
+            if (m_ShowGradient)
+              std::cout<<"Gradient, ";
+            std::cout << "GradientMagnitudeTolerance, ";
+            std::cout << "StepLength" << std::endl;
 
-        }
-        int MAXNUBEROFITERATIONS = optimizer->GetNumberOfIterations();
-        int nperlevel = MAXNUBEROFITERATIONS / m_NumberOfLevels;
-        if (iteration % nperlevel == 0)
-        {
-            optimizer->SetMaximumStepLength(optimizer->GetMaximumStepLength() / m_LevelsDivisor);
-            optimizer->SetMinimumStepLength(optimizer->GetMinimumStepLength() / m_LevelsDivisor);
-            std::cout << "Level " << iteration / nperlevel << " new MAXIMUM StepLength: " << optimizer->GetMaximumStepLength() << " new MINIMUM StepLength: " << optimizer->GetMinimumStepLength() << std::endl;
 
         }
         std::cout << iteration << "   ";
         std::cout << optimizer->GetValue() << "   ";
-        std::cout << optimizer->GetGradient() << "   ";
-    // std::cout << optimizer->GetGradientMagnitudeTolerance() << "   ";
+        if (m_ShowGradient)
+            std::cout << optimizer->GetGradient() << "   ";
+
+        std::cout << optimizer->GetGradientMagnitudeTolerance() << "   ";
     // std::cout << optimizer->GetCurrentPosition() << "   ";
+
 
     std::cout << optimizer->GetCurrentStepLength() << std::endl;
 
@@ -140,4 +132,79 @@ public:
         }
     }
     }
+};
+
+
+
+template <typename TRegistration>
+class RegistrationInterfaceCommand : public itk::Command
+{
+public:
+  using Self = RegistrationInterfaceCommand;
+  using Superclass = itk::Command;
+  using Pointer = itk::SmartPointer<Self>;
+  itkNewMacro(Self);
+ 
+protected:
+  RegistrationInterfaceCommand() = default;
+ 
+public:
+  using RegistrationType = TRegistration;
+  using RegistrationPointer = RegistrationType *;
+  using OptimizerType = itk::RegularStepGradientDescentOptimizer;
+  using OptimizerPointer = OptimizerType *;
+  void
+  Execute(itk::Object * object, const itk::EventObject & event) override
+  {
+    if (!(itk::IterationEvent().CheckEvent(&event)))
+    {
+      return;
+    }
+    auto registration = static_cast<RegistrationPointer>(object);
+    auto optimizer =
+      static_cast<OptimizerPointer>(registration->GetModifiableOptimizer());
+ 
+    std::cout << "-------------------------------------" << std::endl;
+    std::cout << "MultiResolution Level : " << registration->GetCurrentLevel()
+              << std::endl;
+    std::cout << std::endl;
+ 
+    if (registration->GetCurrentLevel() == 0)
+    {
+        optimizer->SetMaximumStepLength(0.1);
+        optimizer->SetMinimumStepLength(0.01);
+        }
+        
+    else
+    {
+      optimizer->SetMaximumStepLength(optimizer->GetMaximumStepLength() /
+                                      4.0);
+      optimizer->SetMinimumStepLength(optimizer->GetMinimumStepLength() /
+                                      10.0);
+    }
+        if (optimizer->GetCurrentIteration() == 0)
+    {
+        std::cout << "-------------------------------------" << std::endl;
+        std::cout << "MultiResolution Level : " << registration->GetCurrentLevel()
+                  << std::endl;
+
+        // Print the resolution at the current level
+        auto fixedImagePyramid = registration->GetFixedImagePyramid();
+        auto movingImagePyramid = registration->GetMovingImagePyramid();
+        std::cout << "Fixed Image Resolution : " 
+                  << fixedImagePyramid->GetOutput(registration->GetCurrentLevel())->GetSpacing() 
+                  << std::endl;
+        std::cout << "Moving Image Resolution : " 
+                  << movingImagePyramid->GetOutput(registration->GetCurrentLevel())->GetSpacing() 
+                  << std::endl;
+
+        std::cout << std::endl;
+    }
+};
+
+  void
+  Execute(const itk::Object *, const itk::EventObject &) override
+  {
+    return;
+  }
 };

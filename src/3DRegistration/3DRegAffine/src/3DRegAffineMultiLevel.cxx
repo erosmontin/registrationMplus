@@ -1,8 +1,4 @@
-
-
-
-//DeformableRegistration6
-#include "itkImageRegistrationMethod.h"
+#include "itkMultiResolutionImageRegistrationMethod.h"
 #include "../../../Metrics/Mplus/itkMplus.h"
 #include "itkBSplineTransform.h"
 #include "itkLBFGSBOptimizer.h"
@@ -10,9 +6,8 @@
 #include "itkImageFileWriter.h"
 #include "itkResampleImageFilter.h"
 #include "itkCastImageFilter.h"
-#include "itkBSplineResampleImageFunction.h"
+#include "itkAffineTransform.h"
 #include "itkIdentityTransform.h"
-#include "itkBSplineDecompositionImageFilter.h"
 #include "itkImageMaskSpatialObject.h"
 
 #include "itkTransformToDeformationFieldSource.h"
@@ -27,6 +22,9 @@
 #include "itkTimeProbesCollectorBase.h"
 #include "itkMemoryProbesCollectorBase.h"
 
+#include "itkCenteredTransformInitializer.h"
+#include "itkRegularStepGradientDescentOptimizer.h"
+
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
 
@@ -34,49 +32,44 @@ const unsigned int ImageDimension = 3;
 
 	typedef  float          PixelType;
 	typedef itk::Image< PixelType, ImageDimension >  FixedImageType;
-	typedef itk::Image< PixelType, ImageDimension >  MovingImageType;
 
 	const unsigned int SpaceDimension = ImageDimension;
 	const unsigned int SplineOrder = 3;
 	typedef double CoordinateRepType;
-
-	typedef itk::BSplineTransform<
-			CoordinateRepType,
-			SpaceDimension,
-			SplineOrder >     TransformType;
-
-
-	typedef itk::LBFGSBOptimizer       OptimizerType;
+	
+	typedef itk::AffineTransform<double, 3> TransformType;
 
 
 	typedef itk::Mplus<
 			FixedImageType,
-			MovingImageType >    MetricType;
+			FixedImageType >    MetricType;
 
 	typedef itk:: LinearInterpolateImageFunction<
-			MovingImageType,
+			FixedImageType,
 			double          >    InterpolatorType;
 
-	typedef itk::ImageRegistrationMethod<
+	typedef itk::MultiResolutionImageRegistrationMethod<
 			FixedImageType,
-			MovingImageType >    RegistrationType;
+			FixedImageType >    RegistrationType;
 
 	MetricType::Pointer         metric        = MetricType::New();
-	OptimizerType::Pointer      optimizer     = OptimizerType::New();
 	InterpolatorType::Pointer   interpolator  = InterpolatorType::New();
 	RegistrationType::Pointer   registration  = RegistrationType::New();
 
-
+typedef itk::RegularStepGradientDescentOptimizer OptimizerType;
 int main( int argc, char *argv[] )
 {
     po::options_description desc("B-spline Registration\n"
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
-	"Allowed options for alpha MI + lambda NGF +  nu MSE");
-	double YOTA=0.0;
-	double YOTADERIVATIVE=0.0;
-    desc.add_options()
+	"Allowed options for alpha MI + lambda NGF +  nu MSE + yota NMI ");
+    std::string method;
+	bool ND=false;
+    int NL=2;
+	double YOTA=0.1;
+	double YOTADERIVATIVE=0;
+	desc.add_options()
 	    ("help,h", "produce help message")
         ("fixedimage,f", po::value<std::string>(), "Fixed image filename")
         ("movingimage,m", po::value<std::string>(), "Moving image filename")
@@ -85,34 +78,31 @@ int main( int argc, char *argv[] )
         ("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")
 	    ("alpha,a", po::value<double>()->default_value(1.0), "alpha value MI 1.0")
 		("alphaderivative,A", po::value<double>()->default_value(1.0), "alpha derivative MI 1.0")
+		("subtype", po::value<std::string>(&method)->default_value("affine"), "Subtype (translation, rotation, scaling, affine)")
 		("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")
         ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
-	    ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
 		("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
 		("lambda,l", po::value<double>()->default_value(1.0), "lambda value NGF 1.0")
         ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")
+        ("yota,y", po::value<double>(&YOTA)->default_value(0.1), "Yota value NMI 0.1")
+        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
         ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
         ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
         ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
 	    ("nu,n", po::value<double>()->default_value(1.0), "nu value MSE 1.0")
 		("nuderivative,N", po::value<double>()->default_value(1.0), "nu MSE derivative 1.0")
-        ("gridresolution,g", po::value<double>()->default_value(2), "Mesh resolution (mm) 2")
         ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
-        ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
-        ("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")
-        ("numberofevaluations,E", po::value<int>()->default_value(500), "Number of Evaluations")
-        ("numberofcorrections,C", po::value<int>()->default_value(5), "Number of Corrections")
+		("minimumsteplength,S", po::value<double>()->default_value(0.1), "Minimum step length")
+		("maximumsteplength,X", po::value<double>()->default_value(1.0), "Maximum step length")
+		("relaxationfactor,R", po::value<double>()->default_value(0.5), "Relaxation factor")
+		("gradientmagnitudetolerance,G", po::value<double>()->default_value(1e-4), "Gradient magnitude tolerance")
 		("fixedimagethreshold,t", po::value<double>()->default_value(-99999999), "Fixed image threshold")
-        ("bound", po::value<int>()->default_value(0), "Set the boundary condition for each variable, where = 0 if x[i] is unbounded, 1 if x[i] has only a lower bound,2 if x[i] has both lower and upper bounds and 3 if x[1] has only an upper bound")
-        ("lbound", po::value<double>()->default_value(0), "Lower bound")
-        ("ubound", po::value<double>()->default_value(0), "Upper bound")
         ("transformout,T", po::value<std::string>()->default_value("N"), "Output for transform")
         ("transformin,W", po::value<std::string>()->default_value("N"), "Input no rigid transform for transform")
-		("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
-        ("yota,y", po::value<double>(&YOTA)->default_value(0.1), "Yota value NMI 0.1")
-        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
+		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
+        ("numberoflevels,U", po::value<int>(&NL)->default_value(2), "Number of levels")
 
     ;
 	
@@ -173,24 +163,21 @@ for(const auto& it : vm) {
     std::cerr << "Error: NGFevaluator must be between 0 and 4" << std::endl;
     return EXIT_FAILURE;
 }
-	double GRIDRESOLUTION=vm["gridresolution"].as<double>();
 	int NI=vm["maxnumberofiterations"].as<int>();
-	double CFCF=vm["costfunctionconvergencefactor"].as<double>();
-	double PGT=vm["projectedgradienttolerance"].as<double>();
-	int NE=vm["numberofevaluations"].as<int>();
-	int NC=vm["numberofcorrections"].as<int>();
 	double TR=vm["fixedimagethreshold"].as<double>();
-	bool TB=vm["bsplinecaching"].as<bool>();
+
 	bool EPDF=vm["explicitPDFderivatives"].as<bool>();
-	int BOUND=vm["bound"].as<int>();
-	double LBOUND=vm["lbound"].as<double>();
-	double UBOUND=vm["ubound"].as<double>();
+
 	std::string TOUT=vm["transformout"].as<std::string>();
 	std::string TIN=vm["transformin"].as<std::string>();
 	double DFLTPIXELVALUE=vm["dfltpixelvalue"].as<double>();
-	bool V=vm["verbose"].as<bool>();
-	std::string GRIDPOSITION=vm["gridposition"].as<std::string>();
+	double MINSTEP=vm["minimumsteplength"].as<double>();
+	double MAXSTEP=vm["maximumsteplength"].as<double>();
+	double RF=vm["relaxationfactor"].as<double>();
+	double GMT=vm["gradientmagnitudetolerance"].as<double>();
 
+
+	auto optimizer = OptimizerType::New();
 
 
 	registration->SetMetric(        metric        );
@@ -202,8 +189,10 @@ for(const auto& it : vm) {
 	TransformType::Pointer  transform = TransformType::New();
 	registration->SetTransform( transform );
 
+	
+	
 	typedef itk::ImageFileReader< FixedImageType  > FixedImageReaderType;
-	typedef itk::ImageFileReader< MovingImageType > MovingImageReaderType;
+	typedef itk::ImageFileReader< FixedImageType > MovingImageReaderType;
 
 	FixedImageReaderType::Pointer  fixedImageReader  = FixedImageReaderType::New();
 	MovingImageReaderType::Pointer movingImageReader = MovingImageReaderType::New();
@@ -216,25 +205,29 @@ for(const auto& it : vm) {
 
 	FixedImageType::ConstPointer fixedImage = fixedImageReader->GetOutput();
 
-	MovingImageType::ConstPointer movingImage = movingImageReader->GetOutput();
+	FixedImageType::ConstPointer movingImage = movingImageReader->GetOutput();
 	
 
+  using FixedImagePyramidType =
+    itk::MultiResolutionPyramidImageFilter<FixedImageType,
+                                           FixedImageType>;
+  using MovingImagePyramidType =
+    itk::MultiResolutionPyramidImageFilter<FixedImageType,
+                                           FixedImageType>;
+ 
+  auto fixedImagePyramid = FixedImagePyramidType::New();
+  auto movingImagePyramid = MovingImagePyramidType::New();
+
 	registration->SetFixedImage(  fixedImage   );
+    registration->SetFixedImagePyramid( fixedImagePyramid);
 	registration->SetMovingImage(   movingImage);
+    registration->SetMovingImagePyramid( movingImagePyramid);
 
 	FixedImageType::RegionType fixedRegion = fixedImage->GetBufferedRegion();
 	registration->SetFixedImageRegion( fixedRegion );
 
-	TransformType::PhysicalDimensionsType   fixedPhysicalDimensions;
-	TransformType::MeshSizeType             meshSize;
-	TransformType::OriginType               fixedOrigin;
-
-
-	FixedImageType::SpacingType meshspacing = fixedImage->GetSpacing();
-	FixedImageType::PointType meshorigin = fixedImage->GetOrigin();
-	FixedImageType::DirectionType meshdirection = fixedImage->GetDirection();
-	FixedImageType::SizeType meshsize = fixedImage->GetLargestPossibleRegion().GetSize();
-
+	
+	
 // #let's fix a few things
 	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	{
@@ -244,64 +237,73 @@ for(const auto& it : vm) {
 		}
 		if (ETAM==-1)
 		{
-			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
+			ETAM=itk::GetImageNoise<FixedImageType>(movingImage);
 		}
 		printf("Fixed image noise: %f\n",ETAF);
 		printf("Moving image noise: %f\n",ETAM);
 
 	}
 
-	if (GRIDPOSITION!="N"){
-		//read the image that specifies the position of the grid
-		FixedImageReaderType::Pointer  meshImageReader  = FixedImageReaderType::New();
-		meshImageReader->SetFileName(  GRIDPOSITION );
-		meshImageReader->Update();
-		FixedImageType::ConstPointer meshImage = meshImageReader->GetOutput();
-		//get the information of the image that specifies the position of the grid and overwrite the information of the fixed image
-		meshspacing=meshImage->GetSpacing();
-		meshorigin=meshImage->GetOrigin();
-		meshdirection=meshImage->GetDirection();
-		meshsize=meshImage->GetLargestPossibleRegion().GetSize();
-
-		// resample the meshimage on the fixedimage space in casse the two images have different size
-		typedef itk::ResampleImageFilter<FixedImageType, FixedImageType> ResampleFilterType;
-		ResampleFilterType::Pointer resampler = ResampleFilterType::New();
-		resampler->SetInput(meshImage);
-		resampler->SetOutputParametersFromImage(fixedImage);
-		resampler->Update();
-		FixedImageType::RegionType meshregionresampled=resampler->GetOutput()->GetLargestPossibleRegion();
-		
-		fixedImage->SetRequestedRegion(meshregionresampled);
-	}
 	
-	unsigned int numberOfGridNodes=0;
-	for( unsigned int i=0; i< SpaceDimension; i++ )
-	{
-		fixedOrigin[i] = meshorigin[i];
-		fixedPhysicalDimensions[i] = meshspacing[i] *
-				static_cast<double>(
-						meshsize[i] - 1 );
-		numberOfGridNodes=static_cast<int>((fixedPhysicalDimensions[i]-fixedOrigin[i])/GRIDRESOLUTION);
-		    if (numberOfGridNodes <= SplineOrder) {
-        std::cerr << "Error: numberOfGridNodes must be greater than 0" << std::endl;
-        return EXIT_FAILURE;
-    	}
-
-		meshSize[i] =  numberOfGridNodes - SplineOrder;
-    std::cout << "Dimension " << i << ": numberOfGridNodes = " << numberOfGridNodes << ", meshSize = " << meshSize[i] << std::endl;
-
-	}
-
-	transform->SetTransformDomainOrigin( fixedOrigin );
-	transform->SetTransformDomainPhysicalDimensions(
-			fixedPhysicalDimensions );
-	transform->SetTransformDomainMeshSize( meshSize );
-	transform->SetTransformDomainDirection( fixedImage->GetDirection() );
 	transform->SetIdentity();
+	// allign the center of the images
+	typedef itk::CenteredTransformInitializer<
+			TransformType,
+			FixedImageType,
+			FixedImageType >  TransformInitializerType;
 
-	
-	//metric is negative
-	optimizer->MinimizeOn();
+	TransformInitializerType::Pointer initializer = TransformInitializerType::New();
+
+	initializer->SetTransform(   transform );
+	initializer->SetFixedImage(  fixedImage );
+	initializer->SetMovingImage( movingImage );
+	initializer->MomentsOn();
+	initializer->InitializeTransform();
+
+
+
+	  using OptimizerScalesType = OptimizerType::ScalesType;
+  OptimizerScalesType optimizerScales(
+    transform->GetNumberOfParameters());
+	optimizerScales.Fill(1.0);
+  const double translationScale = 1.0 / 1000.0;
+  optimizerScales[9] = translationScale;
+  optimizerScales[10] = translationScale;
+  optimizerScales[11] = translationScale;
+  optimizer->SetScales(optimizerScales);
+  optimizer->SetNumberOfIterations(NI);
+  optimizer->SetMinimumStepLength(MINSTEP);
+  optimizer->SetRelaxationFactor(RF);
+  optimizer->SetGradientMagnitudeTolerance(GMT);
+  optimizer->SetMaximumStepLength(MAXSTEP);
+
+
+
+if (method == "translation") {
+    // Only optimize translation parameters
+    for (int i = 0; i < 9; ++i) {
+        optimizerScales[i] = 0.0;
+    }
+} else if (method == "rotation") {
+    // Only optimize rotation parameters
+    for (int i = 3; i < 12; ++i) {
+        if (i < 9) {
+            optimizerScales[i] = 1.0;
+        } else {
+            optimizerScales[i] = 0.0;
+        }
+    }
+} else if (method == "scaling") {
+    // Only optimize scaling parameters
+    for (int i = 0; i < 12; ++i) {
+        if (i < 9 || i > 11) {
+            optimizerScales[i] = 0.0;
+        } else {
+            optimizerScales[i] = 1.0;
+        }
+    }
+}
+
 	typedef TransformType::ParametersType     ParametersType;
 
 	const unsigned int numberOfParameters =
@@ -323,16 +325,16 @@ for(const auto& it : vm) {
 	metric->SetMSENumberOfSamples(numberOfSamplesMA);
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
-	metric->SetUseCachingOfBSplineWeights(TB);
 	metric->SetUseExplicitPDFDerivatives(EPDF);
 	metric->SetNu(NU);
 	metric->SetNuDerivative(NUDERIVATIVE);
 	metric->SetLambda(LAMBDA);
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
 	metric->SetNGFNumberOfSamples(numberOfSamplesMA);
+	metric->SetNormalizeDerivatives(ND);
+	metric->SetNumberOfThreads(NT);
 	metric->SetYota(YOTA);
 	metric->SetYotaDerivative(YOTADERIVATIVE);
-	metric->SetNumberOfThreads(NT);
 
 	
 	metric->SetFixedEta(ETAF);
@@ -344,52 +346,7 @@ for(const auto& it : vm) {
 		metric->SetUseFixedImageSamplesIntensityThreshold(TR);
 	}
 
-	const unsigned int numParameters = transform->GetNumberOfParameters();
-	OptimizerType::BoundSelectionType boundSelect( numParameters );
-	OptimizerType::BoundValueType upperBound( numParameters );
-	OptimizerType::BoundValueType lowerBound( numParameters );
 
-	boundSelect.Fill( BOUND );
-	std::cout<<"Optimization Bound"<<BOUND<<std::endl;
-	switch (BOUND)
-	{
-	case 1:
-		lowerBound.Fill(  LBOUND);
-		std::cout<<"Lower Bound"<<LBOUND<<std::endl;
-		break;
-	case 2:
-		lowerBound.Fill( LBOUND );
-		upperBound.Fill( UBOUND );
-		std::cout<<"Lower Bound"<<LBOUND<<" and "<<"Upper Bound"<<UBOUND<<std::endl;
-		break;
-	case 3:
-		upperBound.Fill( UBOUND );
-		std::cout<<"Upper Bound"<<UBOUND<<std::endl;
-		break;	
-	default:
-		std::cout<<"Ubounded "<<UBOUND<<std::endl;
-		break;
-	}
-
-	upperBound.Fill( UBOUND );
-	
-
-	optimizer->SetBoundSelection( boundSelect );
-	optimizer->SetUpperBound( upperBound );
-	optimizer->SetLowerBound( lowerBound );
-	//CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.
-	optimizer->SetCostFunctionConvergenceFactor( CFCF );
-
-	if (V){
-		optimizer->TraceOn();
-	}
-
-	optimizer->SetProjectedGradientTolerance( PGT );
-	optimizer->SetMaximumNumberOfIterations( NI );
-	optimizer->SetMaximumNumberOfEvaluations( NE );
-	optimizer->SetMaximumNumberOfCorrections( NC);
-
-	optimizer->SetMinimize(true);
 
 	if (TIN!="N")
 	{
@@ -400,43 +357,55 @@ for(const auto& it : vm) {
 		transform=dynamic_cast<TransformType*>(transformReader->GetTransformList()->front().GetPointer());
 
 		
-		registration->SetInitialTransformParameters( transform->GetParameters() );
-	}
+	}else
+	{
+		transform->SetIdentity();
+		// allign the center of the images
+		typedef itk::CenteredTransformInitializer<
+				TransformType,
+				FixedImageType,
+				FixedImageType >  TransformInitializerType;
 
+		TransformInitializerType::Pointer initializer = TransformInitializerType::New();
+
+		initializer->SetTransform(   transform );
+		initializer->SetFixedImage(  fixedImage );
+		initializer->SetMovingImage( movingImage );
+		initializer->MomentsOn();
+
+		initializer->InitializeTransform();
+
+
+	}
+		registration->SetInitialTransformParameters( transform->GetParameters() );
 	std::cout << "Starting Registration "
 			<< std::endl;
 
-
-	std::cout<< "\n\n\n\n B-spline transform usin itkMplus	\n\tThread: "<< metric->GetNumberOfThreads() <<
+	// SaveImage<movingImageType>(ApplyTransform<FixedImageType, TransformType>(movingImageReader->GetOutput(), transform));
+	
+	std::cout<< "\n\n\n\n Affine Transform using itkMplus	\n\tThread: "<< metric->GetNumberOfThreads() <<
 			"\nVariables: " <<transform->GetNumberOfParameters() <<
-			"\nVariables: " << transform->GetTransformDomainMeshSize() <<
-			
+
 			std::endl;
 
+			TransformType::ParametersType init_ = transform->GetParameters();
+			std::cout << "Initial transform parameters: " << init_ << std::endl;
 
-	
-	// size_t number_of_points = meshSize[0] * meshSize[1] * meshSize[2];
-	// int number_of_cells = transform->GetNumberOfParameters();
+			init_ = registration->GetInitialTransformParameters();
+			std::cout << "Initial transform parameters rec " << init_ << std::endl;
 
-	// // Estimate memory usage
-	// using CellType = MeshType::CellType;
-	// using CellAutoPointer = CellType::CellAutoPointer;
-
-	// CellAutoPointer cellPointer;
-	// size_t number_of_points_per_cell = cellPointer->GetNumberOfPoints();
-	// long int  memory_for_points = number_of_points * ImageDimension * sizeof(float);
-	// long int memory_for_cells = number_of_cells * (1 + number_of_points_per_cell) * sizeof(int);
-
-	// size_t total_memory = memory_for_points + memory_for_cells;
-
-	// std::cout<<totak_memory<<std::endl;
-
-
-	LBFGSBOptimizeCommandIterationUpdate::Pointer observer = LBFGSBOptimizeCommandIterationUpdate::New();
-	optimizer->AddObserver( itk::IterationEvent(), observer );
       // Add a time probe
     itk::TimeProbesCollectorBase   chronometer;
     itk::MemoryProbesCollectorBase memorymeter;
+
+
+
+
+  using CommandType = RegistrationInterfaceCommand<RegistrationType>;
+  auto command = CommandType::New();
+  registration->AddObserver(itk::IterationEvent(), command);
+  registration->SetNumberOfLevels(NL);
+
 
 	try
 	{
@@ -466,7 +435,7 @@ for(const auto& it : vm) {
 	transform->SetParameters( registration->GetLastTransformParameters() );
 
 	typedef itk::ResampleImageFilter<
-			MovingImageType,
+			FixedImageType,
 			FixedImageType >    ResampleFilterType;
 
 	ResampleFilterType::Pointer resample = ResampleFilterType::New();
@@ -480,7 +449,7 @@ for(const auto& it : vm) {
 	resample->SetOutputDirection( fixedImage->GetDirection() );
 	resample->SetDefaultPixelValue( DFLTPIXELVALUE );
 
-	typedef itk::ImageFileWriter< MovingImageType >  WriterType;
+	typedef itk::ImageFileWriter< FixedImageType >  WriterType;
 	WriterType::Pointer      writer =  WriterType::New();
 
 
