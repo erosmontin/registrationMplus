@@ -366,7 +366,7 @@ if (method == "translation") {
 
 	// SaveImage<movingImageType>(ApplyTransform<MovingImageType, TransformType>(movingImageReader->GetOutput(), transform));
 	
-	std::cout<< "\n\n\n\n B-spline transform usin itkMANGFMSE	\n\tThread: "<< metric->GetNumberOfThreads() <<
+	std::cout<< "\n\n\n\n Affine Transform using itkMANGFMSE	\n\tThread: "<< metric->GetNumberOfThreads() <<
 			"\nVariables: " <<transform->GetNumberOfParameters() <<
 
 			std::endl;
