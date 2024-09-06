@@ -131,3 +131,31 @@ void SaveImage(typename TImage::Pointer image, const std::string& filename)
     writer->SetInput(image);
     writer->Update();
 }
+
+
+
+#include "itkImageFileReader.h"
+#include "itkImageFileWriter.h"
+
+
+template<typename TDeformationFieldType>
+typename TDeformationFieldType::Pointer ReadDeformationField(const std::string& fileName)
+{
+    typedef itk::ImageFileReader<TDeformationFieldType> ReaderType;
+    typename ReaderType::Pointer reader = ReaderType::New();
+    reader->SetFileName(fileName);
+    reader->Update();
+
+    return reader->GetOutput();
+}
+template<typename TDeformationFieldType>
+void WriteDeformationField(const std::string& fileName, 
+                           typename TDeformationFieldType::Pointer deformationField)
+{
+    typedef itk::ImageFileWriter<TDeformationFieldType> WriterType;
+    typename WriterType::Pointer writer = WriterType::New();
+    writer->SetFileName(fileName);
+    writer->SetInput(deformationField);
+    writer->Update();
+}
+

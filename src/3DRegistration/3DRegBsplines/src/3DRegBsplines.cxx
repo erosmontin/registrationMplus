@@ -33,8 +33,7 @@ namespace po = boost::program_options;
 const unsigned int ImageDimension = 3;
 
 	typedef  float          PixelType;
-	typedef itk::Image< PixelType, ImageDimension >  FixedImageType;
-	typedef itk::Image< PixelType, ImageDimension >  MovingImageType;
+	typedef itk::Image< PixelType, ImageDimension >  ImageType;
 
 	const unsigned int SpaceDimension = ImageDimension;
 	const unsigned int SplineOrder = 3;
@@ -50,22 +49,24 @@ const unsigned int ImageDimension = 3;
 
 
 	typedef itk::Mplus<
-			FixedImageType,
-			MovingImageType >    MetricType;
+			ImageType,
+			ImageType >    MetricType;
 
 	typedef itk:: LinearInterpolateImageFunction<
-			MovingImageType,
+			ImageType,
 			double          >    InterpolatorType;
 
 	typedef itk::ImageRegistrationMethod<
-			FixedImageType,
-			MovingImageType >    RegistrationType;
+			ImageType,
+			ImageType >    RegistrationType;
 
 	MetricType::Pointer         metric        = MetricType::New();
 	OptimizerType::Pointer      optimizer     = OptimizerType::New();
 	InterpolatorType::Pointer   interpolator  = InterpolatorType::New();
 	RegistrationType::Pointer   registration  = RegistrationType::New();
 
+	typedef itk::Vector< double,  ImageDimension >  VectorType;
+	typedef itk::Image< VectorType,  ImageDimension >   DeformationTransformImageType;
 
 int main( int argc, char *argv[] )
 {
@@ -96,7 +97,7 @@ int main( int argc, char *argv[] )
         ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
 	    ("nu,n", po::value<double>()->default_value(1.0), "nu value MSE 1.0")
 		("nuderivative,N", po::value<double>()->default_value(1.0), "nu MSE derivative 1.0")
-        ("gridresolution,g", po::value<double>()->default_value(2), "Mesh resolution (mm) 2")
+        ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm) 2")
         ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
         ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
         ("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")
@@ -197,13 +198,13 @@ for(const auto& it : vm) {
 	registration->SetOptimizer(     optimizer     );
 	registration->SetInterpolator(  interpolator  );
 	registration->SetNumberOfThreads(NT);
-	registration->SetFixedImageRegion( FixedImageType::RegionType() );
+	registration->SetFixedImageRegion( ImageType::RegionType() );
 
 	TransformType::Pointer  transform = TransformType::New();
 	registration->SetTransform( transform );
 
-	typedef itk::ImageFileReader< FixedImageType  > FixedImageReaderType;
-	typedef itk::ImageFileReader< MovingImageType > MovingImageReaderType;
+	typedef itk::ImageFileReader< ImageType  > FixedImageReaderType;
+	typedef itk::ImageFileReader< ImageType > MovingImageReaderType;
 
 	FixedImageReaderType::Pointer  fixedImageReader  = FixedImageReaderType::New();
 	MovingImageReaderType::Pointer movingImageReader = MovingImageReaderType::New();
@@ -214,15 +215,15 @@ for(const auto& it : vm) {
 	fixedImageReader->Update();
 	movingImageReader->Update();
 
-	FixedImageType::ConstPointer fixedImage = fixedImageReader->GetOutput();
+	ImageType::ConstPointer fixedImage = fixedImageReader->GetOutput();
 
-	MovingImageType::ConstPointer movingImage = movingImageReader->GetOutput();
+	ImageType::ConstPointer movingImage = movingImageReader->GetOutput();
 	
 
 	registration->SetFixedImage(  fixedImage   );
 	registration->SetMovingImage(   movingImage);
 
-	FixedImageType::RegionType fixedRegion = fixedImage->GetBufferedRegion();
+	ImageType::RegionType fixedRegion = fixedImage->GetBufferedRegion();
 	registration->SetFixedImageRegion( fixedRegion );
 
 	TransformType::PhysicalDimensionsType   fixedPhysicalDimensions;
@@ -230,21 +231,21 @@ for(const auto& it : vm) {
 	TransformType::OriginType               fixedOrigin;
 
 
-	FixedImageType::SpacingType meshspacing = fixedImage->GetSpacing();
-	FixedImageType::PointType meshorigin = fixedImage->GetOrigin();
-	FixedImageType::DirectionType meshdirection = fixedImage->GetDirection();
-	FixedImageType::SizeType meshsize = fixedImage->GetLargestPossibleRegion().GetSize();
+	ImageType::SpacingType meshspacing = fixedImage->GetSpacing();
+	ImageType::PointType meshorigin = fixedImage->GetOrigin();
+	ImageType::DirectionType meshdirection = fixedImage->GetDirection();
+	ImageType::SizeType meshsize = fixedImage->GetLargestPossibleRegion().GetSize();
 
 // #let's fix a few things
 	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	{
 		if (ETAF==-1)
 		{
-			ETAF=itk::GetImageNoise<FixedImageType>(fixedImage);
+			ETAF=itk::GetImageNoise<ImageType>(fixedImage);
 		}
 		if (ETAM==-1)
 		{
-			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
+			ETAM=itk::GetImageNoise<ImageType>(movingImage);
 		}
 		printf("Fixed image noise: %f\n",ETAF);
 		printf("Moving image noise: %f\n",ETAM);
@@ -256,7 +257,7 @@ for(const auto& it : vm) {
 		FixedImageReaderType::Pointer  meshImageReader  = FixedImageReaderType::New();
 		meshImageReader->SetFileName(  GRIDPOSITION );
 		meshImageReader->Update();
-		FixedImageType::ConstPointer meshImage = meshImageReader->GetOutput();
+		ImageType::ConstPointer meshImage = meshImageReader->GetOutput();
 		//get the information of the image that specifies the position of the grid and overwrite the information of the fixed image
 		meshspacing=meshImage->GetSpacing();
 		meshorigin=meshImage->GetOrigin();
@@ -264,12 +265,12 @@ for(const auto& it : vm) {
 		meshsize=meshImage->GetLargestPossibleRegion().GetSize();
 
 		// resample the meshimage on the fixedimage space in casse the two images have different size
-		typedef itk::ResampleImageFilter<FixedImageType, FixedImageType> ResampleFilterType;
+		typedef itk::ResampleImageFilter<ImageType, ImageType> ResampleFilterType;
 		ResampleFilterType::Pointer resampler = ResampleFilterType::New();
 		resampler->SetInput(meshImage);
 		resampler->SetOutputParametersFromImage(fixedImage);
 		resampler->Update();
-		FixedImageType::RegionType meshregionresampled=resampler->GetOutput()->GetLargestPossibleRegion();
+		ImageType::RegionType meshregionresampled=resampler->GetOutput()->GetLargestPossibleRegion();
 		
 		fixedImage->SetRequestedRegion(meshregionresampled);
 	}
@@ -393,16 +394,20 @@ for(const auto& it : vm) {
 
 	if (TIN!="N")
 	{
-		typedef itk::TransformFileReader TransformReaderType;
-		TransformReaderType::Pointer transformReader = TransformReaderType::New();
-		transformReader->SetFileName( TIN );
-		transformReader->Update();
-		transform=dynamic_cast<TransformType*>(transformReader->GetTransformList()->front().GetPointer());
-
-		
-		registration->SetInitialTransformParameters( transform->GetParameters() );
+	
+	transform = ReadTransform<TransformType>(TIN);
+	registration->SetInitialTransformParameters(transform->GetParameters());
 	}
 
+	// if TODO
+	// if (VIN!='N')
+	// {
+	// 	DeformationTransformImageType::Pointer td  = DeformationTransformImageType::New();
+	// 	td=ReadDeformationField<DeformationTransformImageType>(VIN);
+	// 	transform=DeformationFieldToTransform<TransformType,ImageType,DeformationTransformImageType>(td, fixedImage);
+	// 	registration->SetInitialTransformParameters(transform->GetParameters());
+
+	// }
 	std::cout << "Starting Registration "
 			<< std::endl;
 
@@ -415,22 +420,6 @@ for(const auto& it : vm) {
 
 
 	
-	// size_t number_of_points = meshSize[0] * meshSize[1] * meshSize[2];
-	// int number_of_cells = transform->GetNumberOfParameters();
-
-	// // Estimate memory usage
-	// using CellType = MeshType::CellType;
-	// using CellAutoPointer = CellType::CellAutoPointer;
-
-	// CellAutoPointer cellPointer;
-	// size_t number_of_points_per_cell = cellPointer->GetNumberOfPoints();
-	// long int  memory_for_points = number_of_points * ImageDimension * sizeof(float);
-	// long int memory_for_cells = number_of_cells * (1 + number_of_points_per_cell) * sizeof(int);
-
-	// size_t total_memory = memory_for_points + memory_for_cells;
-
-	// std::cout<<totak_memory<<std::endl;
-
 
 	LBFGSBOptimizeCommandIterationUpdate::Pointer observer = LBFGSBOptimizeCommandIterationUpdate::New();
 	optimizer->AddObserver( itk::IterationEvent(), observer );
@@ -466,8 +455,8 @@ for(const auto& it : vm) {
 	transform->SetParameters( registration->GetLastTransformParameters() );
 
 	typedef itk::ResampleImageFilter<
-			MovingImageType,
-			FixedImageType >    ResampleFilterType;
+			ImageType,
+			ImageType >    ResampleFilterType;
 
 	ResampleFilterType::Pointer resample = ResampleFilterType::New();
 
@@ -480,7 +469,7 @@ for(const auto& it : vm) {
 	resample->SetOutputDirection( fixedImage->GetDirection() );
 	resample->SetDefaultPixelValue( DFLTPIXELVALUE );
 
-	typedef itk::ImageFileWriter< MovingImageType >  WriterType;
+	typedef itk::ImageFileWriter< ImageType >  WriterType;
 	WriterType::Pointer      writer =  WriterType::New();
 
 
@@ -501,19 +490,11 @@ for(const auto& it : vm) {
 
 
 	if (VOUT!="N")
-	{
-		typedef itk::Vector< float,  ImageDimension >  VectorType2;
-		typedef itk::Image< VectorType2,  ImageDimension >   OutputTransformationImageType2;
-		typedef itk::TransformToDeformationFieldSource< OutputTransformationImageType2, double >TransformToDeformationFieldSourceType2;
-		TransformToDeformationFieldSourceType2::Pointer td = TransformToDeformationFieldSourceType2::New();
-		td->SetOutputParametersFromImage(movingImageReader->GetOutput());
-		td->SetTransform( registration->GetOutput()->Get() );
-		//std::cout<<registration->GetOutput()->Get()<<std::endl;
-		typedef itk::ImageFileWriter< OutputTransformationImageType2>TransformToDeformationFieldSourceWriterType;
-		TransformToDeformationFieldSourceWriterType::Pointer rtd = TransformToDeformationFieldSourceWriterType::New();
-		rtd->SetInput(td->GetOutput());
-		rtd->SetFileName(VOUT);
-		rtd->Update();
+	{		
+		DeformationTransformImageType::Pointer td  = DeformationTransformImageType::New();
+		td=TransformToDeformationField<TransformType,ImageType,DeformationTransformImageType>(transform, movingImageReader->GetOutput());
+		WriteDeformationField<DeformationTransformImageType>(VOUT, td);
+
 	};
 
 

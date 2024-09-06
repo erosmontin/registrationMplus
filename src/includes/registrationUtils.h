@@ -208,3 +208,120 @@ public:
     return;
   }
 };
+
+
+#include "itkImage.h"
+#include "itkImageFileReader.h"
+#include "itkImageFileWriter.h"
+#include "itkBSplineTransform.h"
+#include "itkResampleImageFilter.h"
+#include "itkTransformToDisplacementFieldFilter.h"
+
+template <typename TImage, typename TTransform>
+typename TImage::Pointer CreateBSplineFromTransform(TTransform* transform, TImage* image, typename TImage::SizeType gridSize)
+{
+    using ImageType = TImage;
+    using TransformType = TTransform;
+    using DisplacementFieldType = itk::Image<itk::Vector<float, ImageType::ImageDimension>, ImageType::ImageDimension>;
+    using TransformToDisplacementFieldFilterType = itk::TransformToDisplacementFieldFilter<DisplacementFieldType, double>;
+
+    // Create a deformation field from the transform
+    typename TransformToDisplacementFieldFilterType::Pointer displacementFieldFilter = TransformToDisplacementFieldFilterType::New();
+    displacementFieldFilter->SetTransform(transform);
+    displacementFieldFilter->SetSize(image->GetLargestPossibleRegion().GetSize());
+    displacementFieldFilter->SetOutputStartIndex(image->GetLargestPossibleRegion().GetIndex());
+    displacementFieldFilter->SetOutputSpacing(image->GetSpacing());
+    displacementFieldFilter->SetOutputDirection(image->GetDirection());
+    displacementFieldFilter->SetOutputOrigin(image->GetOrigin());
+    displacementFieldFilter->Update();
+
+    typename DisplacementFieldType::Pointer displacementField = displacementFieldFilter->GetOutput();
+
+    // Initialize a B-spline transform with the deformation field
+    typename TransformType::Pointer bsplineTransform = TransformType::New();
+    bsplineTransform->SetTransformDomainOrigin(image->GetOrigin());
+    bsplineTransform->SetTransformDomainDirection(image->GetDirection());
+    bsplineTransform->SetTransformDomainPhysicalDimensions(image->GetSpacing());
+    bsplineTransform->SetTransformDomainMeshSize(gridSize);
+
+    // Use the deformation field to set the weights of the B-spline transform's coefficients
+    typename TransformType::ParametersType parameters(bsplineTransform->GetNumberOfParameters());
+    for (unsigned int i = 0; i < parameters.GetSize(); ++i)
+    {
+        parameters[i] = displacementField->GetPixel(i);
+    }
+    bsplineTransform->SetParameters(parameters);
+
+    return bsplineTransform;
+}
+
+
+#include "itkTransformToDeformationFieldSource.h"
+
+
+
+template<typename TTransformType,typename TMovingImageType,typename TDeformationFieldType>
+typename TDeformationFieldType::Pointer TransformToDeformationField(typename TTransformType::Pointer transform, 
+                                                                             typename TMovingImageType::Pointer movingImage)
+{
+    typedef itk::TransformToDeformationFieldSource<TDeformationFieldType, typename TDeformationFieldType::PixelType::ValueType> TransformToDeformationFieldSourceType;
+    typename TransformToDeformationFieldSourceType::Pointer td = TransformToDeformationFieldSourceType::New();
+    td->SetOutputParametersFromImage(movingImage);
+    td->SetTransform(transform);
+    td->Update();
+
+    return td->GetOutput();
+}
+
+#include "itkTransformFileReader.h"
+#include "itkTransformFileWriter.h"
+
+template<typename TTransformType>
+void WriteTransform(const std::string& fileName, typename TTransformType::Pointer transform)
+{
+    #if (ITK_VERSION_MAJOR == 4 && ITK_VERSION_MINOR >= 5) || ITK_VERSION_MAJOR > 4
+        typedef itk::TransformFileWriterTemplate<typename TTransformType::ParametersValueType> WriterType;
+    #else
+        typedef itk::TransformFileWriter WriterType;
+    #endif
+
+    typename WriterType::Pointer writer = WriterType::New();
+    writer->SetInput(transform);
+    writer->SetFileName(fileName);
+    writer->Update();
+}
+
+#include "itkTransformFileReader.h"
+
+itk::TransformBase::Pointer ReadTransformGeneric(const std::string& fileName)
+{
+    #if (ITK_VERSION_MAJOR == 4 && ITK_VERSION_MINOR >= 5) || ITK_VERSION_MAJOR > 4
+        typedef itk::TransformFileReaderTemplate<double> ReaderType;
+    #else
+        typedef itk::TransformFileReader ReaderType;
+    #endif
+
+    ReaderType::Pointer reader = ReaderType::New();
+    reader->SetFileName(fileName);
+    reader->Update();
+
+    return reader->GetTransformList()->front();
+}
+
+#include "itkTransformFileReader.h"
+
+template<typename TTransformType>
+typename TTransformType::Pointer ReadTransform(const std::string& fileName)
+{
+    #if (ITK_VERSION_MAJOR == 4 && ITK_VERSION_MINOR >= 5) || ITK_VERSION_MAJOR > 4
+        typedef itk::TransformFileReaderTemplate<typename TTransformType::ParametersValueType> ReaderType;
+    #else
+        typedef itk::TransformFileReader ReaderType;
+    #endif
+
+    typename ReaderType::Pointer reader = ReaderType::New();
+    reader->SetFileName(fileName);
+    reader->Update();
+
+    return dynamic_cast<TTransformType*>(reader->GetTransformList()->front().GetPointer());
+}
