@@ -1,7 +1,6 @@
 #include "itkImageRegistrationMethod.h"
 #include "../../../Metrics/Mplus/itkMplus.h"
-#include "itkBSplineTransform.h"
-#include "itkLBFGSBOptimizer.h"
+
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
 #include "itkResampleImageFilter.h"
@@ -100,7 +99,8 @@ int main( int argc, char *argv[] )
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
 		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
-   
+		// ("cir,c", po::value<boost::optional<std::vector<double>>>()->default_value(boost::none, ""), "CR 3D point index (x y z)")
+		// ("CIR,C", po::value<std::vector<double>>()->multitoken()->default_value(boost::none, ""), "CR 3D index index (i j k)")
         ("yota,y", po::value<double>(&YOTA)->default_value(0.1), "Yota value NMI 0.1")
         ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
  ;
@@ -174,6 +174,31 @@ for(const auto& it : vm) {
 	double MAXSTEP=vm["maximumsteplength"].as<double>();
 	double RF=vm["relaxationfactor"].as<double>();
 	double GMT=vm["gradientmagnitudetolerance"].as<double>();
+
+	// bool iscir=false;
+	// boost::optional<std::vector<double>> cir;
+	// if (vm.count("cir")) {
+	// 	iscir = true;
+	// 	cir = vm["cir"].as<boost::optional<std::vector<double>>>();
+	// 	if (cir && cir->size() != 3) {
+	// 		std::cerr << "Error: cir must have exactly 3 coordinates" << std::endl;
+	// 		return EXIT_FAILURE;
+	// 	}
+	// 	else if (vm.count("CIR"))
+	// 	{
+
+	// 		std::vector<double> CIR = vm["CIR"].as<std::vector<double>>();
+
+	// 		if (CIR.size() != 3) {
+	// 			std::cerr << "Error: CIR must have exactly 3 coordinates" << std::endl;
+	// 			return EXIT_FAILURE;
+	// 		}
+			
+	// 	}
+		
+	// }
+
+
 
 
 
@@ -255,43 +280,48 @@ for(const auto& it : vm) {
   OptimizerScalesType optimizerScales(
     transform->GetNumberOfParameters());
 	optimizerScales.Fill(1.0);
-  const double translationScale = 1.0 / 1000.0;
-  optimizerScales[9] = translationScale;
-  optimizerScales[10] = translationScale;
-  optimizerScales[11] = translationScale;
-  optimizer->SetScales(optimizerScales);
+  optimizerScales[9] = GMT;
+  optimizerScales[10] = GMT;
+  optimizerScales[11] = GMT;
   optimizer->SetNumberOfIterations(NI);
   optimizer->SetMinimumStepLength(MINSTEP);
   optimizer->SetRelaxationFactor(RF);
   optimizer->SetGradientMagnitudeTolerance(GMT);
   optimizer->SetMaximumStepLength(MAXSTEP);
 
-
+	
 
 if (method == "translation") {
     // Only optimize translation parameters
+	optimizerScales.Fill(1.0);
     for (int i = 0; i < 9; ++i) {
-        optimizerScales[i] = 0.0;
+        optimizerScales[i] = GMT;
     }
 } else if (method == "rotation") {
     // Only optimize rotation parameters
+		optimizerScales.Fill(1.0);
     for (int i = 3; i < 12; ++i) {
         if (i < 9) {
             optimizerScales[i] = 1.0;
         } else {
-            optimizerScales[i] = 0.0;
+            optimizerScales[i] = GMT;
         }
     }
 } else if (method == "scaling") {
-    // Only optimize scaling parameters
+	optimizerScales.Fill(1.0);
+
+    // Only optimize scaling parameters along the diagonal of the rotation matrix
     for (int i = 0; i < 12; ++i) {
-        if (i < 9 || i > 11) {
-            optimizerScales[i] = 0.0;
-        } else {
+        if (i == 0 || i == 4 || i == 8) {
             optimizerScales[i] = 1.0;
+        } else {
+            optimizerScales[i] = GMT;
         }
     }
 }
+
+  optimizer->SetScales(optimizerScales);
+
 
 	typedef TransformType::ParametersType     ParametersType;
 
@@ -303,6 +333,18 @@ if (method == "translation") {
 	parametersLow.Fill( 0.0 );
 
 	transform->SetParameters( parametersLow );
+
+
+	// itk::Point<double, 3> center;
+	// itk::Index<3> centerIndex;
+
+	// for (int i = 0; i < 3; ++i) {
+	// 	centerIndex[i] = sourceImage->GetLargestPossibleRegion().GetSize()[i] / 2;
+	// }
+	// sourceImage->TransformIndexToPhysicalPoint(centerIndex, center);
+	// transform->SetCenter(center);
+
+
 
 	registration->SetInitialTransformParameters( transform->GetParameters() );
 

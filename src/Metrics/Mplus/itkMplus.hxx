@@ -1,5 +1,5 @@
-#ifndef __itkMANGFMSE_hxx
-#define __itkMANGFMSE_hxx
+#ifndef __itkMplus_hxx
+#define __itkMplus_hxx
 
 #include "itkMplus.h"
 #include "../NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkNGFMetricKernel.h"
@@ -37,7 +37,7 @@ namespace itk
 
 		m_UseCachingOfBSplineWeights = true;
 		m_UseExplicitPDFDerivatives = true;
-		m_NormalizeDerivatives = true;
+		m_NormalizeDerivatives = false;
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -213,7 +213,6 @@ m_NMI->SetUpperBound(upperBound);
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
 	{
-		std::cout << "NMI: " << m_Yota << std::endl;
 		return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
 	}
 
@@ -258,7 +257,7 @@ double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this
 		for (long unsigned int p = 0; p < derivative.GetSize(); p++)
 		{	
 			derivative[p] = a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p] + this->m_YotaDerivative * d[p];
-			derivative[p] = derivative[p] / derivativeSum;	
+			// derivative[p] = derivative[p] / derivativeSum;	
 		}
 	}
 
