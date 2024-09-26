@@ -17,9 +17,9 @@ find_package(Boost REQUIRED COMPONENTS program_options)
 
 if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})
-    add_executable(test1 test1.cxx)
-    target_link_libraries(test1 ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
+    # add_executable(test1 test1.cxx)
+    # target_link_libraries(test1 ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
 
-    add_executable(test2 test2.cxx)
-    target_link_libraries(test2 ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
+    add_executable(test4 test4.cxx)
+    target_link_libraries(test4 ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
 endif()
