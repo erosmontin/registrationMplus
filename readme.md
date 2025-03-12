@@ -181,6 +181,40 @@ Run the Docker container:
 docker run --rm -v $(pwd):/data erosmontin/mplus:latest 
 ```
 
+## Running with Singularity on HPC
+
+You can build and run the project using Singularity by utilizing either the provided `Singularity.def` file located in the root of this repository or directly from the Docker image.
+
+### Option 1: Build from Singularity definition file
+
+```bash
+sudo singularity build mPlus.sif Singularity.def
+```
+
+### Option 2: Build directly from Docker image
+
+You can build the Singularity container directly from the Docker Hub image:
+
+```bash
+sudo singularity build mPlus.sif docker://erosmontin/mplus:latest
+```
+
+### Running the Singularity container:
+
+To run the executable directly:
+
+```bash
+singularity run mPlus.sif [arguments]
+```
+
+Or explicitly invoke the command:
+
+```bash
+singularity exec mPlus.sif 3DRegBsplines [arguments]
+```
+
+Replace `[arguments]` with appropriate options as detailed in the usage section above.
+
 
 # Contributors
 [*Dr. Eros Montin, PhD*](http://me.biodimensional.com)\
