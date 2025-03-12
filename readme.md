@@ -1,4 +1,11 @@
 # Image registration based on mPlus
+![GitHub last commit](https://img.shields.io/github/last-commit/erosmontin/registrationMplus)
+![GitHub issues](https://img.shields.io/github/issues/erosmontin/registrationMplus)
+
+![GitHub forks](https://img.shields.io/github/forks/erosmontin/registrationMplus)
+![GitHub stars](https://img.shields.io/github/stars/erosmontin/registrationMplus)
+
+
 This project implements a multi-metric registration strategy that combines Mutual Information (MI), Normalized Gradient Field (NGF), and Mean Squared Error (MSE) techniques. Developed using the Insight Segmentation and Registration Toolkit (ITK), this method is specifically designed for applications in pediatric oncology.
 
 Pediatric oncology presents a particularly challenging scenario for image registration. Children’s brains undergo significant anatomical changes as they grow, and these changes are further complicated by treatment-induced deformations—such as those caused by hydrocephalus or surgical interventions—which can result in nonuniform and unpredictable alterations in tissue structure. Traditional registration methods often struggle to accurately align images acquired across extended periods, as they may not adequately account for these rapid and heterogeneous changes. To address these challenges, our multi-metric registration strategy leverages ITK's powerful and flexible framework to integrate MI for robust intensity-based alignment, NGF to capture spatial gradients and edge information, and MSE to fine-tune the alignment. This complementary approach is specifically designed for pediatric oncology, where precise image registration is essential for tracking treatment outcomes and correlating radiotherapy dose with neurocognitive effects over long-term follow-up.
@@ -8,12 +15,6 @@ For a detailed description of the method, please refer to our article:
 [A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology](https://link.springer.com/article/10.1007/s11517-019-02109-4)
 
 [Publication list](https://biodimensional.com/)
-
-![GitHub last commit](https://img.shields.io/github/last-commit/erosmontin/registrationMplus)
-![GitHub issues](https://img.shields.io/github/issues/erosmontin/registrationMplus)
-
-![GitHub forks](https://img.shields.io/github/forks/erosmontin/registrationMplus)
-![GitHub stars](https://img.shields.io/github/stars/erosmontin/registrationMplus)
 
 
 
