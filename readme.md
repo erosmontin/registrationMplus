@@ -52,7 +52,7 @@ Usage Instructions for Registration Executables
 This project provides two registration executables that use the itkMplus metric, each tailored for a different type of registration.
 
 ------------------------------------------------------------
-1. Affine Registration (itkMplus)
+1. 3D similarity Registration (itkMplus)
 ------------------------------------------------------------
 
 This executable performs affine registration using a similarity transform. It leverages the itkMplus metric and a Regular Step Gradient Descent optimizer.
@@ -78,7 +78,7 @@ Additional Options:
   - Additional options control transform initialization, thresholding, and verbosity.
 
 Example Command:
-  ./AffineRegistration \
+  3DRegSimilarity \
     -f fixedImage.nii.gz \
     -m movingImage.nii.gz \
     -o registeredImage.nii.gz \
@@ -133,7 +133,7 @@ Additional Options:
   - Additional parameters mirror many of the affine registration options.
 
 Example Command:
-  ./DeformableRegistration6 \
+  3DRegBsplines \
     -f fixedImage.nii.gz \
     -m movingImage.nii.gz \
     -o registeredImage.nii.gz \
