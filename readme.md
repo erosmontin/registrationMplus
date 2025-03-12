@@ -7,6 +7,7 @@ Pediatric oncology presents a particularly challenging scenario for image regist
 For a detailed description of the method, please refer to our article:  
 [A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology](https://link.springer.com/article/10.1007/s11517-019-02109-4)
 
+[Publication list](https://biodimensional.com/)
 
 ![GitHub last commit](https://img.shields.io/github/last-commit/erosmontin/registrationMplus)
 ![GitHub issues](https://img.shields.io/github/issues/erosmontin/registrationMplus)
