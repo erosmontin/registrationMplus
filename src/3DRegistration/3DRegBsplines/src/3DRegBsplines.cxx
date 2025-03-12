@@ -74,7 +74,7 @@ int main( int argc, char *argv[] )
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
-	"Allowed options for alpha MI + lambda NGF +  nu MSE");
+	"Allowed options for alpha MI + lambda NGF +  nu MSE + yota NMI");
 	double YOTA=0.0;
 	double YOTADERIVATIVE=0.0;
     desc.add_options()
@@ -90,14 +90,14 @@ int main( int argc, char *argv[] )
         ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
 	    ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
 		("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
-		("lambda,l", po::value<double>()->default_value(1.0), "lambda value NGF 1.0")
+		("lambda,l", po::value<double>()->default_value(0), "lambda value NGF 1.0")
         ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")
         ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
         ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
         ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
-	    ("nu,n", po::value<double>()->default_value(1.0), "nu value MSE 1.0")
-		("nuderivative,N", po::value<double>()->default_value(1.0), "nu MSE derivative 1.0")
-        ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm) 2")
+	    ("nu,n", po::value<double>()->default_value(0), "nu value MSE 1.0")
+		("nuderivative,N", po::value<double>()->default_value(0), "nu MSE derivative 1.0")
+        ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm)")
         ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
         ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
         ("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")
@@ -112,7 +112,7 @@ int main( int argc, char *argv[] )
 		("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
-        ("yota,y", po::value<double>(&YOTA)->default_value(0.1), "Yota value NMI 0.1")
+        ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
         ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
 
     ;
@@ -412,10 +412,11 @@ for(const auto& it : vm) {
 			<< std::endl;
 
 
-	std::cout<< "\n\n\n\n B-spline transform usin itkMplus	\n\tThread: "<< metric->GetNumberOfThreads() <<
+	std::cout<< "\n\n\n\n B-spline transform using itkMplus	\n\tThread: "<< metric->GetNumberOfThreads() <<
 			"\nVariables: " <<transform->GetNumberOfParameters() <<
-			"\nVariables: " << transform->GetTransformDomainMeshSize() <<
-			
+			"\n Grid Nodes" << numberOfGridNodes <<
+			"\nTransform Domain meshes: " << transform->GetTransformDomainMeshSize() <<
+			"\nMontin, E., et al. A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Med Biol Eng Comput 58, 843-855 (2020). https://doi.org/10.1007/s11517-019-02109-4"<<
 			std::endl;
 
 
