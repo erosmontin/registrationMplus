@@ -1,5 +1,12 @@
-# Registration based on MA+NGF+MSE
-A robust registration framework for the alignment of longitudinal brain images, as described in our publication. This project implements a multi-metric registration strategy combining MA, NGF, and MSE techniques, designed specifically for applications in pediatric oncology.
+# Image registration based on mPlus
+This project implements a multi-metric registration strategy that combines Mutual Information (MI), Normalized Gradient Field (NGF), and Mean Squared Error (MSE) techniques. Developed using the Insight Segmentation and Registration Toolkit (ITK), this method is specifically designed for applications in pediatric oncology.
+
+Pediatric oncology presents a particularly challenging scenario for image registration. Children’s brains undergo significant anatomical changes as they grow, and these changes are further complicated by treatment-induced deformations—such as those caused by hydrocephalus or surgical interventions—which can result in nonuniform and unpredictable alterations in tissue structure. Traditional registration methods often struggle to accurately align images acquired across extended periods, as they may not adequately account for these rapid and heterogeneous changes. To address these challenges, our multi-metric registration strategy leverages ITK's powerful and flexible framework to integrate MI for robust intensity-based alignment, NGF to capture spatial gradients and edge information, and MSE to fine-tune the alignment. This complementary approach is specifically designed for pediatric oncology, where precise image registration is essential for tracking treatment outcomes and correlating radiotherapy dose with neurocognitive effects over long-term follow-up.
+
+
+For a detailed description of the method, please refer to our article:  
+[A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology](https://link.springer.com/article/10.1007/s11517-019-02109-4)
+
 
 ![GitHub last commit](https://img.shields.io/github/last-commit/erosmontin/registrationMplus)
 ![GitHub issues](https://img.shields.io/github/issues/erosmontin/registrationMplus)
@@ -8,16 +15,10 @@ A robust registration framework for the alignment of longitudinal brain images, 
 ![GitHub stars](https://img.shields.io/github/stars/erosmontin/registrationMplus)
 
 
-# Overview
-
-This project implements a non-rigid 3D registration algorithm that aligns longitudinal brain images using a combination of multiple metrics (MA, NGF, and MSE). The approach is particularly suited for pediatric oncology, where precise image registration is crucial for monitoring treatment progress and disease evolution.
-
-For a detailed description of the method, please refer to our article:  
-[A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology](https://link.springer.com/article/10.1007/s11517-019-02109-4)
 
 ## Features
 
-- **Multi-metric registration:** Combines MA, NGF, and MSE to optimize registration accuracy.
+- **Multi-metric registration:** Combines MI, NGF, and MSE to optimize registration accuracy.
 - **Non-rigid 3D registration:** Efficiently handles deformations in brain images.
 - **Multithreading support:** Accelerates computation for large 3D datasets.
 - **Open source:** Freely available for research and development.
@@ -194,3 +195,4 @@ and
 
 ```
 Cavatorta C, Meroni S, Montin E, et al. Retrospective study of late radiation-induced damages after focal radiotherapy for childhood brain tumors. PLoS One. 2021;16(2):e0247748. Published 2021 Feb 26. doi:10.1371/journal.pone.0247748
+```
