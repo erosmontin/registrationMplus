@@ -1,42 +1,24 @@
-cmake_minimum_required(VERSION 2.8.6 FATAL_ERROR)
- 
-PROJECT(EROS)
-  find_package(ITK REQUIRED)
-  include(${ITK_USE_FILE})
-  set(ITK_LIBRARIES ${ITK_LIBRARIES})
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+project(RegistrationSuite LANGUAGES CXX)
+
+# — ITK: grab everything you built under your ITK_DIR
+find_package(ITK REQUIRED)
+include(${ITK_USE_FILE})
+
+message(STATUS ">>> ITK_FOUND       = ${ITK_FOUND}")
+message(STATUS ">>> ITK_VERSION     = ${ITK_VERSION}")
+message(STATUS ">>> ITK_LIBRARIES   = ${ITK_LIBRARIES}")
 
 
+# — Boost: for ProgramOptions
+find_package(Boost REQUIRED COMPONENTS program_options)
+include_directories(${Boost_INCLUDE_DIRS})
 
-# Output directories.
+# — Settings
+set(CMAKE_CXX_STANDARD        14)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_compile_options(-fpermissive)
 
-if(WIN32)
-  # Some libraries (e.g. vxl libs) have no dllexport markup, so we can
-  # build full shared libraries only with the GNU toolchain.
-  if(CMAKE_COMPILER_IS_GNUCXX)
-    # CMake adds --enable-all-exports on Cygwin (since Cygwin is
-    # supposed to be UNIX-like), but we need to add it explicitly for
-    # a native windows build with the MinGW tools.
-    if(MINGW)
-      set(CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS
-        "-shared -Wl,--export-all-symbols -Wl,--enable-auto-import")
-      set(CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS
-        "-shared -Wl,--export-all-symbols -Wl,--enable-auto-import")
-      set(CMAKE_EXE_LINKER_FLAGS "-Wl,--enable-auto-import")
-    endif(MINGW)
-  else(CMAKE_COMPILER_IS_GNUCXX)
-   if(BUILD_SHARED_LIBS)
-     set(ITK_LIBRARY_BUILD_TYPE "SHARED")
-   else(BUILD_SHARED_LIBS)
-     set(ITK_LIBRARY_BUILD_TYPE "STATIC")
-   endif(BUILD_SHARED_LIBS)
-   set(BUILD_SHARED_LIBS ON)
-  endif(CMAKE_COMPILER_IS_GNUCXX)
-endif(WIN32)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "../../../bin/")
-set(CMAKE_CXX_STANDARD 14) 
-
-ADD_SUBDIRECTORY(3DRegistration)
-# ADD_SUBDIRECTORY(test)
-
+# — Sub‐folders
+add_subdirectory(3DRegistration)
 

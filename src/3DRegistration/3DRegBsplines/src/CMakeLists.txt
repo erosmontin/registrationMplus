@@ -1,22 +1,25 @@
-# This is the root ITK CMakeLists file.
-cmake_minimum_required(VERSION 2.4)
-if(COMMAND CMAKE_POLICY)
-  cmake_policy(SET CMP0003 NEW)
-endif()
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+project(3DRegBsplines LANGUAGES CXX)
 
-
-# This project is designed to be built outside the Insight source tree.
-project(PRJ_3DRegBsplines)
-
-# Find ITK.
+# — ITK (all modules you built) —
 find_package(ITK REQUIRED)
 include(${ITK_USE_FILE})
 
-
+# — Boost.ProgramOptions —
 find_package(Boost REQUIRED COMPONENTS program_options)
+include_directories(${Boost_INCLUDE_DIRS})
 
-if(Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-    add_executable(3DRegBsplines 3DRegBsplines.cxx)
-    target_link_libraries(3DRegBsplines ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
-endif()
+# — Compiler settings —
+set(CMAKE_CXX_STANDARD 14)
+# allow non‑conforming qualifiers in Mplus (if your Bspline code shares it)
+set(PERMISSIVE_FLAGS -fpermissive)
+
+# — 3DRegBsplines executable —
+add_executable(3DRegBsplines
+  3DRegBsplines.cxx
+)
+target_compile_options(3DRegBsplines PRIVATE ${PERMISSIVE_FLAGS})
+target_link_libraries(3DRegBsplines PRIVATE
+  ${ITK_LIBRARIES}
+  ${Boost_LIBRARIES}
+)
