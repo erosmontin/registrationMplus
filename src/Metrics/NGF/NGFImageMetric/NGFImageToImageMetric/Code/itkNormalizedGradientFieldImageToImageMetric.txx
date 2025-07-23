@@ -128,8 +128,9 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::SetEvaluator(EvaluatorKer
  */
 /** Get the derivatives of the match measure. */
 template <class FI, class MI> 
-void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(const TransformParametersType & parameters,
-                                      DerivativeType  & derivative ) const
+void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
+    const TransformParametersType & parameters,
+    DerivativeType  & derivative ) const
 {
     if (!m_CachedGradient || parameters != m_CachedParameters) {
         m_CachedGradient = this->GetGradient(parameters);
@@ -144,21 +145,23 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(const Trans
     const RegionType& region = this->GetFixedImageRegion();
     const size_t numPixels = region.GetNumberOfPixels();
 
-    // Get raw pointers for cache-friendly access
-    const auto* movingBuffer   = m_MovingNGF->GetBufferPointer();
-    const auto* fixedBuffer    = m_FixedNGF->GetBufferPointer();
+    // Use raw buffer pointers for cache-friendly access
     const auto* gradientBuffer = gradient->GetBufferPointer();
 
-    // Precompute index for each pixel
+    // Precompute all indices for the region (cache-friendly, sequential access)
+    std::vector<typename FixedImageType::IndexType> indices(numPixels);
     itk::ImageRegionConstIteratorWithIndex<FixedNGFType> ifi(m_FixedNGF, region);
-
     for (size_t idx = 0; idx < numPixels; ++idx, ++ifi) {
-        // Compute index and point
-        typename FixedImageType::IndexType index = ifi.GetIndex();
+        indices[idx] = ifi.GetIndex();
+    }
+
+    // Main loop: cache Jacobian and gradient vector per pixel
+    for (size_t idx = 0; idx < numPixels; ++idx) {
+        const auto& index = indices[idx];
         typename FixedImageType::PointType inputPoint;
         this->m_FixedImage->TransformIndexToPhysicalPoint(index, inputPoint);
 
-        // Cache the Jacobian for this pixel
+        // Cache the Jacobian for this pixel (reuse for all parameters)
         const TransformJacobianType& jacobian = this->m_Transform->GetJacobian(inputPoint);
 
         // Get gradient vector for this pixel
@@ -176,7 +179,7 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(const Trans
             }
             if (allZero) continue;
 
-            // Compute sum for this parameter
+            // Compute sum for this parameter (reuse cached Jacobian and gradVec)
             RealType sum = RealType();
             for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
                 auto jacobianValue = jacobian(dim, par);
