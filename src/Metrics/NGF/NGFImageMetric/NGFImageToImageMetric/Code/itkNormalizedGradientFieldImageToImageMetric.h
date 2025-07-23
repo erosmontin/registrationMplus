@@ -191,6 +191,8 @@ private:
   
   mutable typename MovingNGFType::Pointer m_CachedGradient;
   mutable TransformParametersType m_CachedParameters;
+  mutable TransformParametersType m_CachedValueParameters;
+
   
 };
 

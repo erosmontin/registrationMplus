@@ -197,9 +197,13 @@ template <class FI, class MI>
 typename NormalizedGradientFieldImageToImageMetric<FI,MI>::MeasureType
 NormalizedGradientFieldImageToImageMetric<FI,MI>::GetValue( const TransformParametersType & parameters ) const
 {
-	this->m_Transform->SetParameters(parameters); 
-	m_MovingNGFEvaluator->Update(); 
-	return DoGetValue(); 
+    // Only update if parameters have changed
+    if (m_CachedValueParameters != parameters) {
+        this->m_Transform->SetParameters(parameters); 
+        m_MovingNGFEvaluator->Update(); 
+        m_CachedValueParameters = parameters;
+    }
+    return DoGetValue(); 
 }
 
 template <class FI, class MI> 
