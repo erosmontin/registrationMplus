@@ -29,7 +29,7 @@ NS_BEGIN(itk)
 // Implementation of scalar product based evaluator 
 //
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFScalarKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const 
 {
 	Real v = moving * fixed; 
@@ -37,14 +37,14 @@ NGFScalarKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const
 }
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFScalarKernel<MovingGF,FixedGF>::Gradient(MV& result, 
 				   const MV& moving,
 				   const GradientIteratorType gradmoving[], 
 				   const FV& fixed)const 
 {
 	Real v = moving * fixed; 
-	#pragma omp parallel for
+	#pragma omp simd
 
 	for (unsigned long i = 0; i < result.Size(); ++i) 
 		result[i] = - 2.0 * v * (gradmoving[i].Value() * fixed); 
@@ -126,7 +126,7 @@ struct __DispatchCrossproduct<M,F,2> {
 #endif
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFCrossKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const 
 {
 	typedef __DispatchCrossproduct<MV, FV, MovingGF::ImageDimension> DispatchCrossproduct; 
@@ -136,7 +136,7 @@ NGFCrossKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const
 }
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFCrossKernel<MovingGF,FixedGF>::Gradient(MV& result, 
 					   const MV& moving,
 					   const GradientIteratorType gradmoving[], 
@@ -148,7 +148,7 @@ NGFCrossKernel<MovingGF,FixedGF>::Gradient(MV& result,
 	typename DispatchCrossproduct::ReturnType help; 
 
 	DispatchCrossproduct::Apply(x, moving, fixed);
-	#pragma omp parallel for
+	#pragma omp simd
 	for (unsigned long i = 0; i < result.Size(); ++i) {
 		DispatchCrossproduct::Apply(help, gradmoving[i].Value(), fixed); 
 		result[i] = 2.0 * (help * x); 
@@ -163,7 +163,7 @@ NGFCrossKernel<MovingGF,FixedGF>::Gradient(MV& result,
 
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFScaledDeltaKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const 
 {
 	const Real dot_mf =  moving * fixed;
@@ -177,7 +177,7 @@ NGFScaledDeltaKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)
 }
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFScaledDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result, 
 					const MV& moving,
 					const GradientIteratorType g[], 
@@ -192,7 +192,7 @@ NGFScaledDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result,
 	const Real helper0 = dot_ff - dot_mf * cxy; 
 
 	const Real helper = - helper0 * cxy; 
-	#pragma omp parallel for
+	#pragma omp simd
 	for (unsigned long i = 0; i < result.Size(); ++i)
 		result[i] = helper * ((2.0 * (fixed * g[i].Value())) - dotrsbymm * (moving * g[i].Value())); 
 
@@ -205,7 +205,7 @@ NGFScaledDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result,
 // 
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFDeltaKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const 
 {
 	Real v = (moving - fixed) * fixed; 
@@ -213,14 +213,14 @@ NGFDeltaKernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const
 }
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result, 
 					      const MV& moving,
 					      const GradientIteratorType gradmoving[], 
 					      const FV& fixed)const 
 {
 	Real v = (moving - fixed) * fixed; 
-	#pragma omp parallel for
+	#pragma omp simd
 	for (unsigned long i = 0; i < result.Size(); ++i) 
 		result[i] = 2.0 * v * (gradmoving[i].Value() * fixed); 
 	return v * v; 
@@ -232,7 +232,7 @@ NGFDeltaKernel<MovingGF,FixedGF>::Gradient(MV& result,
 // 
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFDelta2Kernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const 
 {
 	Real v = (moving - fixed) * (moving + fixed); 
@@ -240,14 +240,14 @@ NGFDelta2Kernel<MovingGF,FixedGF>::Value(const MV& moving, const FV& fixed)const
 }
 
 template <class MovingGF, class FixedGF> 
-typename NGFKernel<MovingGF,FixedGF>::Real 
+inline typename NGFKernel<MovingGF,FixedGF>::Real 
 NGFDelta2Kernel<MovingGF,FixedGF>::Gradient(MV& result, 
 					      const MV& moving,
 					      const GradientIteratorType gradmoving[], 
 					      const FV& fixed)const 
 {
 	Real v = (moving - fixed) * (moving + fixed); 
-	#pragma omp parallel for
+	#pragma omp simd
 	for (unsigned long i = 0; i < result.Size(); ++i) 
 		result[i] = 4.0 * v * (gradmoving[i].Value() * moving); 
 	return v * v; 

@@ -161,13 +161,11 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
         typename FixedImageType::PointType inputPoint;
         this->m_FixedImage->TransformIndexToPhysicalPoint(index, inputPoint);
 
-        // Cache the Jacobian for this pixel (reuse for all parameters)
+        // Cache the Jacobian for this pixel
         const TransformJacobianType& jacobian = this->m_Transform->GetJacobian(inputPoint);
 
-        // Get gradient vector for this pixel
         const auto& gradVec = gradientBuffer[idx];
 
-        // For each parameter
         for (unsigned int par = 0; par < ParametersDimension; ++par) {
             // Early skip if Jacobian column is all zero
             bool allZero = true;
@@ -179,7 +177,6 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
             }
             if (allZero) continue;
 
-            // Compute sum for this parameter (reuse cached Jacobian and gradVec)
             RealType sum = RealType();
             for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
                 auto jacobianValue = jacobian(dim, par);
