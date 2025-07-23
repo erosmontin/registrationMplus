@@ -149,10 +149,11 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
     const auto* gradientBuffer = gradient->GetBufferPointer();
 
     // Precompute all indices for the region (cache-friendly, sequential access)
-    std::vector<typename FixedImageType::IndexType> indices(numPixels);
+    std::vector<typename FixedImageType::IndexType> indices;
+    indices.reserve(numPixels); // Reserve memory to avoid reallocations
     itk::ImageRegionConstIteratorWithIndex<FixedNGFType> ifi(m_FixedNGF, region);
     for (size_t idx = 0; idx < numPixels; ++idx, ++ifi) {
-        indices[idx] = ifi.GetIndex();
+        indices.push_back(ifi.GetIndex());
     }
 
     // Main loop: cache Jacobian and gradient vector per pixel
@@ -177,7 +178,7 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
             }
             if (allZero) continue;
 
-            RealType sum = RealType();
+            RealType sum = NumericTraits<RealType>::ZeroValue();
             for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
                 auto jacobianValue = jacobian(dim, par);
                 auto gradientValue = gradVec[dim];
@@ -266,6 +267,11 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetGradient(const TransformPar
 		// evaluating the gradinet manually shows that for some 
 		// reason the sign is wrong - maybe the DerivativeNeighborhoodOperator 
 		// returns the values with an unexpected sign?
+		
+		
+		// Eros Montin update 09/23/25
+		//The sign flip is needed because the ITK derivative operator (or your kernel) returns the gradient with a sign opposite to what your metric expects. This is a common issue when using finite difference operators.
+// If possible, fix the sign at the source (operator or kernel). If not, keep the flip and document it.
 		
 		iout.Value() *= -1; 
 
