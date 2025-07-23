@@ -129,58 +129,65 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::SetEvaluator(EvaluatorKer
 /** Get the derivatives of the match measure. */
 template <class FI, class MI> 
 void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(const TransformParametersType & parameters,
-								      DerivativeType  & derivative ) const
+                                      DerivativeType  & derivative ) const
 {
-    // Only recompute the gradient if parameters have changed
     if (!m_CachedGradient || parameters != m_CachedParameters) {
         m_CachedGradient = this->GetGradient(parameters);
         m_CachedParameters = parameters;
     }
     typename MovingNGFType::Pointer gradient = m_CachedGradient;
-	const unsigned int ParametersDimension = this->GetNumberOfParameters();
-	derivative = DerivativeType( ParametersDimension );
-	
-	ImageRegionConstIterator<MovingNGFType>         iti(m_MovingNGF, this->GetFixedImageRegion()); 
-	ImageRegionConstIteratorWithIndex<FixedNGFType> ifi(m_FixedNGF, this->GetFixedImageRegion());
-	ImageRegionConstIterator<MovingNGFType>         igrad(gradient, this->GetFixedImageRegion());
-	
-	
-	ifi.GoToBegin();
-	iti.GoToBegin();
-	igrad.GoToBegin();
-	
-	derivative.Fill( NumericTraits<ITK_TYPENAME DerivativeType::ValueType>::Zero );		
-	/*
-	  When using a B-Spline transformation, 82% of the registration process is spent in this 
-	  loop (according to valgrind). 
-	  For this case it should be optimized like in the MattesMutualInformation-Img2ImgMetric, 
-	  because most of the time we are adding zeros. 
-	*/
-	while (! ifi.IsAtEnd()) {
-		typename FixedImageType::IndexType index = ifi.GetIndex();
-		typename FixedImageType::PointType inputPoint;
-		this->m_FixedImage->TransformIndexToPhysicalPoint( index, inputPoint );
-		const TransformJacobianType & jacobian = this->m_Transform->GetJacobian( inputPoint ); 
-		#pragma omp parallel for
-		for(unsigned int par=0; par < ParametersDimension; par++)	{
-			RealType sum = RealType();
-			// for(unsigned int dim = 0; dim <  FI::ImageDimension; dim++) {
-			// 	sum += jacobian( dim, par ) * igrad.Value()[dim];
-			// }
-		for(unsigned int dim = 0; dim <  FI::ImageDimension; dim++) {
-        auto jacobianValue = jacobian(dim, par);
-        auto gradientValue = igrad.Value()[dim];
-        if (jacobianValue != 0.0 && gradientValue != 0.0) {
-            sum += jacobianValue * gradientValue;
+    const unsigned int ParametersDimension = this->GetNumberOfParameters();
+    derivative = DerivativeType( ParametersDimension );
+    derivative.Fill( NumericTraits<ITK_TYPENAME DerivativeType::ValueType>::Zero );
+
+    // Get region and size
+    const RegionType& region = this->GetFixedImageRegion();
+    const size_t numPixels = region.GetNumberOfPixels();
+
+    // Get raw pointers for cache-friendly access
+    const auto* movingBuffer   = m_MovingNGF->GetBufferPointer();
+    const auto* fixedBuffer    = m_FixedNGF->GetBufferPointer();
+    const auto* gradientBuffer = gradient->GetBufferPointer();
+
+    // Precompute index for each pixel
+    itk::ImageRegionConstIteratorWithIndex<FixedNGFType> ifi(m_FixedNGF, region);
+
+    for (size_t idx = 0; idx < numPixels; ++idx, ++ifi) {
+        // Compute index and point
+        typename FixedImageType::IndexType index = ifi.GetIndex();
+        typename FixedImageType::PointType inputPoint;
+        this->m_FixedImage->TransformIndexToPhysicalPoint(index, inputPoint);
+
+        // Cache the Jacobian for this pixel
+        const TransformJacobianType& jacobian = this->m_Transform->GetJacobian(inputPoint);
+
+        // Get gradient vector for this pixel
+        const auto& gradVec = gradientBuffer[idx];
+
+        // For each parameter
+        for (unsigned int par = 0; par < ParametersDimension; ++par) {
+            // Early skip if Jacobian column is all zero
+            bool allZero = true;
+            for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
+                if (jacobian(dim, par) != 0.0) {
+                    allZero = false;
+                    break;
+                }
+            }
+            if (allZero) continue;
+
+            // Compute sum for this parameter
+            RealType sum = RealType();
+            for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
+                auto jacobianValue = jacobian(dim, par);
+                auto gradientValue = gradVec[dim];
+                if (jacobianValue != 0.0 && gradientValue != 0.0) {
+                    sum += jacobianValue * gradientValue;
+                }
+            }
+            derivative[par] += sum;
         }
     }
-
-			derivative[par] += sum;
-		}
-		++ifi; 
-		++iti; 
-		++igrad; 
-	}
 }
 
 template <class FI, class MI> 
