@@ -95,6 +95,9 @@ NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
 
 	if (!m_Evaluator.get())
 		m_Evaluator.reset(new NGFScaledDeltaKernel<MovingNGFType,FixedNGFType>); 
+
+    m_CachedParameters = this->m_Transform->GetParameters();
+    m_CachedGradient = this->GetGradient(m_CachedParameters);
 }
 
 template <class TFixedImage, class TMovingImage> 
@@ -128,7 +131,12 @@ template <class FI, class MI>
 void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(const TransformParametersType & parameters,
 								      DerivativeType  & derivative ) const
 {
-	typename MovingNGFType::Pointer gradient = GetGradient(parameters); 
+    // Only recompute the gradient if parameters have changed
+    if (!m_CachedGradient || parameters != m_CachedParameters) {
+        m_CachedGradient = this->GetGradient(parameters);
+        m_CachedParameters = parameters;
+    }
+    typename MovingNGFType::Pointer gradient = m_CachedGradient;
 	const unsigned int ParametersDimension = this->GetNumberOfParameters();
 	derivative = DerivativeType( ParametersDimension );
 	

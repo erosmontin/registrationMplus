@@ -188,7 +188,9 @@ private:
 
 	double m_FixedNoise;
 	double m_MovingNoise;
-
+  
+  mutable typename MovingNGFType::Pointer m_CachedGradient;
+  mutable TransformParametersType m_CachedParameters;
   
 };
 
