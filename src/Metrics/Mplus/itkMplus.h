@@ -242,9 +242,7 @@ if (maxVal != minVal)
 	bool m_UseCachingOfBSplineWeights;
 	bool m_UseExplicitPDFDerivatives;
 	bool m_NormalizeDerivatives;
-	// <<< new member
 	bool   m_AutoEstimateEta;
-	// >>>
 
 protected:
 
@@ -264,6 +262,23 @@ protected:
 	typedef typename NGFType::MovingNGFType MovingNGFType;
 	typedef typename NGFType::FixedNGFType  FixedNGFType;
 
+	/** Compute max–min over one derivative vector */
+	double ComputeDerivativeRange(const DerivativeType & der) const;
+
+	/** Compute mean of one derivative vector */
+	double ComputeDerivativeMean(const DerivativeType & der) const;
+
+	/** Compute standard deviation of one derivative vector */
+	double ComputeDerivativeStdDev(const DerivativeType & der) const;
+
+	/** cached range of the *last* sub‐metric derivative */
+	mutable double m_RangeDerivatives;
+
+	mutable double m_STDDerivatives;
+	mutable double m_MeanDerivatives;
+
+	double  ComputeDerivativeNorm(const DerivativeType & derivative) const;
+	mutable double m_LastComponentNorm;
 
 
 

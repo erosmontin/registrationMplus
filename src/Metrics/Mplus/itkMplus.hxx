@@ -50,9 +50,9 @@ namespace itk
 		m_UseExplicitPDFDerivatives = true;
 		m_NormalizeDerivatives = false;
 		m_NGFSpacing.Fill(4.0);
-		// <<< default off
 		m_AutoEstimateEta = false;
-		// >>>
+		m_RangeDerivatives=0.0;
+
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -78,9 +78,7 @@ namespace itk
 
 		Superclass::Initialize();
 
-		// <<< auto-estimate η?
-	
-		// >>>
+
 		if ((this->m_Alpha!=0.0) || (this->m_AlphaDerivative!=0.0))
 		{
 		m_MA->SetFixedImage(this->m_FixedImage);
@@ -286,6 +284,39 @@ namespace itk
 			m_NGF->Initialize();
 		}
 	}
+	template<class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage,TMovingImage>
+	::ComputeDerivativeMean(const DerivativeType & der) const
+	{
+	  const auto N = der.Size();
+	  if (N == 0) return 0.0;
+	  double sum = 0.0;
+
+	  for (unsigned i = 0; i < N; ++i)
+	  {
+		sum += der[i];
+	  }
+	  return sum / static_cast<double>(N);
+	}
+	
+	template<class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage,TMovingImage>
+	::ComputeDerivativeStdDev(const DerivativeType & der) const
+	{
+	  const auto N = der.Size();
+	  if (N == 0) return 0.0;
+	  const double mean = this->ComputeDerivativeMean(der);
+	  double sumSq = 0.0;
+	  for (unsigned i = 0; i < N; ++i)
+	  {
+		const double diff = der[i] - mean;
+		sumSq += diff * diff;
+	  }
+	  // population standard deviation:
+	  return std::sqrt( sumSq / static_cast<double>(N) );
+	}
 
 	template <class TFixedImage, class TMovingImage>
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
@@ -355,8 +386,12 @@ namespace itk
 	Mplus<TFixedImage, TMovingImage>::GetDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 
+		
+		
+
+
 		DerivativeType a;
-		a = parameters;
+		a = parameters;		
 		if (this->m_AlphaDerivative != 0.0)
 			this->GetMADerivative(parameters, a);
 		else
@@ -395,8 +430,49 @@ namespace itk
 		{
 			derivative[p] =
 				a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p] + this->m_RhoDerivative * d[p] + this->m_YotaDerivative * e[p];
+			if (this->m_NormalizeDerivatives)
+			{
+				// normalize the derivative
+
+				derivative[p] *= this->m_LastComponentNorm;
+			}
 		}
 	}
+
+	template<class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage,TMovingImage>
+	::ComputeDerivativeRange(const DerivativeType & der) const
+	{
+	  const auto N = der.Size();
+	  if(N == 0) return 0.0;
+	  double minVal = std::numeric_limits<double>::infinity();
+	  double maxVal = -std::numeric_limits<double>::infinity();
+
+	  for(unsigned i = 0; i < N; ++i)
+	  {
+		const double v = der[i];
+		if(v < minVal) minVal = v;
+		if(v > maxVal) maxVal = v;
+	  }
+	  return maxVal - minVal;
+	}
+
+
+
+	template<class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage,TMovingImage>
+	::ComputeDerivativeNorm(const DerivativeType & der) const
+	{
+	  
+	double norm = 0.0;
+	#pragma omp parallel for reduction(+:norm)
+	for (unsigned int i = 0; i < der.size(); ++i) {
+		norm += der[i] * der[i];
+	}
+	return std::sqrt(norm);
+}
 
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -404,7 +480,11 @@ namespace itk
 	{
 		m_MA->GetDerivative(parameters, derivative);
 		// normalize the derivative
+		// this->m_MeanDerivatives = this->ComputeDerivativeMean(derivative);
+		// this->m_STDDerivatives = this->ComputeDerivativeStdDev(derivative);
+		this->m_LastComponentNorm = this->ComputeDerivativeNorm(derivative);
 		this->NormalizeDerivative(derivative);
+		
 	}
 
 	template <class TFixedImage, class TMovingImage>
