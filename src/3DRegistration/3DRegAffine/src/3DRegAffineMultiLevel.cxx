@@ -28,6 +28,10 @@
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
 
+#include <algorithm>      // for std::replace
+#include <iterator>       // for std::istream_iterator
+#include <sstream>        // for std::istringstream
+
 const unsigned int ImageDimension = 3;
 
 	typedef  float          PixelType;
@@ -103,7 +107,13 @@ int main( int argc, char *argv[] )
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
 		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
         ("numberoflevels,U", po::value<int>(&NL)->default_value(2), "Number of levels")
-
+        ("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+        ("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
+        ("nmipercentage",   po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
+        ("mipercentage",    po::value<double>()->default_value(0.1), "Histogram‐MI percentage of pixels used (0.1 = 10%)")
+        ("rho",             po::value<double>()->default_value(0.0), "rho weight for histogram‐MI (HMI)")
+        ("rhoderivative",   po::value<double>()->default_value(0.0), "rho derivative for histogram‐MI")
+        ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
     ;
 	
 
@@ -176,6 +186,33 @@ for(const auto& it : vm) {
 	double RF=vm["relaxationfactor"].as<double>();
 	double GMT=vm["gradientmagnitudetolerance"].as<double>();
 
+    double MSEPERCENTAGE = vm["msepercentage"].as<double>();
+    double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
+    double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
+    double MIPERCENTAGE  = vm["mipercentage"].as<double>();
+    double RHO           = vm["rho"].as<double>();
+    double RHODERIVATIVE = vm["rhoderivative"].as<double>();
+
+    // parse ngfspacing string → SpacingType
+    {
+        auto s = vm["ngfspacing"].as<std::string>();
+        std::replace(s.begin(), s.end(), ',', ' ');
+        std::istringstream iss(s);
+        std::vector<double> tmp{
+            std::istream_iterator<double>(iss),
+            std::istream_iterator<double>()};
+        if (tmp.size() != ImageDimension)
+        {
+            std::cerr << "Error: ngfspacing must have "
+                      << ImageDimension << " comma-separated values\n";
+            return EXIT_FAILURE;
+        }
+        FixedImageType::SpacingType ngf;
+        for (unsigned i = 0; i < ImageDimension; ++i)
+            ngf[i] = tmp[i];
+        vm.insert({ "parsed_ngfspacing",
+            po::variable_value(boost::any(ngf), false) });
+    }
 
 	auto optimizer = OptimizerType::New();
 
@@ -319,10 +356,14 @@ if (method == "translation") {
 
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 	const unsigned int numberOfSamplesMA =static_cast< unsigned int >( numberOfPixels * MAPERCENTAGE );
+    const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
+    const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
+    const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
+    const unsigned int numberOfSamplesHMI = static_cast<unsigned int>(numberOfPixels * MIPERCENTAGE);
 
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
-	metric->SetMSENumberOfSamples(numberOfSamplesMA);
+	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetUseExplicitPDFDerivatives(EPDF);
@@ -330,12 +371,15 @@ if (method == "translation") {
 	metric->SetNuDerivative(NUDERIVATIVE);
 	metric->SetLambda(LAMBDA);
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
-	metric->SetNGFNumberOfSamples(numberOfSamplesMA);
+	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNormalizeDerivatives(ND);
 	metric->SetNumberOfThreads(NT);
 	metric->SetYota(YOTA);
 	metric->SetYotaDerivative(YOTADERIVATIVE);
-
+    metric->SetNMINumberOfSamples(numberOfSamplesNMI);
+    metric->SetRho(RHO);
+    metric->SetRhoDerivative(RHODERIVATIVE);
+    metric->SetHMINumberOfSamples(numberOfSamplesHMI);
 	
 	metric->SetFixedEta(ETAF);
 	metric->SetMovingEta(ETAM);
@@ -346,7 +390,11 @@ if (method == "translation") {
 		metric->SetUseFixedImageSamplesIntensityThreshold(TR);
 	}
 
-
+    // apply the parsed spacing
+    {
+        auto ngf = boost::any_cast<FixedImageType::SpacingType>(vm["parsed_ngfspacing"].value());
+        metric->SetNGFSpacing(ngf);
+    }
 
 	if (TIN!="N")
 	{

@@ -11,7 +11,7 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "itkMeanSquaresImageToImageMetric.h"
 #include "itkMutualInformationHistogramImageToImageMetric.h"
 
-// #include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
+#include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
 namespace itk
 {
 template <class TFixedImage, class TMovingImage>
@@ -64,6 +64,12 @@ public:
 	itkGetMacro( NGFNumberOfSamples, unsigned int);
 	itkSetMacro( NGFNumberOfSamples, unsigned int);
 
+	itkSetMacro(NMINumberOfSamples, unsigned int);
+	itkGetMacro( NMINumberOfSamples, unsigned int);
+	itkSetMacro( HMINumberOfSamples, unsigned int);
+	itkGetMacro( HMINumberOfSamples, unsigned int);
+
+
 	itkGetMacro( FixedEta, double);
 	itkSetMacro( FixedEta, double);
 
@@ -95,6 +101,14 @@ public:
 	itkGetMacro( YotaDerivative, double);
 	itkSetMacro( YotaDerivative, double);
 
+
+	itkGetMacro( Rho, double);
+	itkSetMacro( Rho, double);
+
+	itkGetMacro( RhoDerivative, double);
+	itkSetMacro( RhoDerivative, double);
+
+	
 	void SetNGFSpacing(const typename TFixedImage::SpacingType& spacing) { m_NGFSpacing = spacing; }
 	typename TFixedImage::SpacingType GetNGFSpacing() const { return m_NGFSpacing; }
 
@@ -143,8 +157,8 @@ public:
 	MeasureType GetNGFValue(const ParametersType & parameters) const;
 	MeasureType GetMAValue(const ParametersType & parameters) const;
 	MeasureType GetMSEValue(const ParametersType & parameters) const;
-	MeasureType GetHMIValue(const ParametersType & parameters) const;         // ← Added
-	// MeasureType GetNMIValue(const ParametersType & parameters) const;
+	MeasureType GetHMIValue(const ParametersType & parameters) const;        
+	MeasureType GetNMIValue(const ParametersType & parameters) const;
 
 	/** Get the derivatives of the match measure. */
 	void GetDerivative(const ParametersType & parameters,
@@ -156,9 +170,9 @@ public:
 	void GetMSEDerivative(const ParametersType & parameters,
 			DerivativeType & Derivative) const;
 	void        GetHMIDerivative(const ParametersType & parameters, 
-                              DerivativeType & Derivative) const;       // ← Added
-	// void GetNMIDerivative(const ParametersType & parameters,
-	// 		DerivativeType & Derivative) const;
+                              DerivativeType & Derivative) const;       
+	void GetNMIDerivative(const ParametersType & parameters,
+			DerivativeType & Derivative) const;
 	void NormalizeDerivative(DerivativeType & Derivative) const;
 	/**  Get the value and derivatives for single valued optimizers. */
 	void GetValueAndDerivative(const ParametersType & parameters,MeasureType & Value,DerivativeType & Derivative) const;
@@ -205,13 +219,15 @@ if (maxVal != minVal)
 	unsigned int m_NGFNumberOfSamples;
 	unsigned int m_MSENumberOfSamples;
 	unsigned int m_HMINumberOfSamples;
-	// unsigned int m_NMINumberOfSamples;
+	unsigned int m_NMINumberOfSamples;
 	double m_FixedEta;
 	double m_MovingEta;
 	double m_Lambda;
 	double m_LambdaDerivative;
 	double m_Yota;
 	double m_YotaDerivative;
+	double m_Rho;
+	double m_RhoDerivative;
 	unsigned int m_NumberOfThreads;
 	char m_Evaluator;
 	double m_Alpha;
@@ -233,7 +249,7 @@ protected:
 	typedef MeanSquaresImageToImageMetric<FixedImageType,MovingImageType> MSEType;
 	typedef MutualInformationHistogramImageToImageMetric<
             FixedImageType,MovingImageType>                HMIType;
-	// typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
+	typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
 
 
 
@@ -254,9 +270,9 @@ private:
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
 	typename HMIType::Pointer m_HMI;                                         
-	// typename NMIType::Pointer m_NMI;
+	typename NMIType::Pointer m_NMI;
 	typename LFType::Pointer m_INTERNALL_interpolator;
-	//typename MSEType::Pointer m_MSE_INTERNALL_interpolator;
+	
 
 	typename TFixedImage::SpacingType m_NGFSpacing;
 

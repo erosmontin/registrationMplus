@@ -110,14 +110,16 @@ int main( int argc, char *argv[] )
 		("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
-        // ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
-        // ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives")
+        ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
+        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives")
         ("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
         ("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
-        // ("nmipercentage", po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
+        ("nmipercentage", po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
         ("ngfspacing", po::value<std::string>()->default_value("4,4,4"),
  "NGF spacing per dimension (x,y,z)")
-
+        ("mipercentage,p", po::value<double>()->default_value(0.1), "MI percentage of pixels used (0.1 = 10%)")
+        ("rho", po::value<double>()->default_value(0.0), "rho weight for histogram‐MI (HMI)")
+        ("rhoderivative", po::value<double>()->default_value(0.0), "rho derivative for histogram‐MI")
     ;
 	
 
@@ -203,6 +205,8 @@ for(const auto& it : vm) {
 	double DFLTPIXELVALUE=vm["dfltpixelvalue"].as<double>();
 	bool V=vm["verbose"].as<bool>();
 	std::string GRIDPOSITION=vm["gridposition"].as<std::string>();
+	double RHO            = vm["rho"].as<double>();
+	double RHODERIVATIVE  = vm["rhoderivative"].as<double>();
 
 
 
@@ -333,11 +337,14 @@ for(const auto& it : vm) {
 
 	double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
 	double MSEPERCENTAGE = vm["msepercentage"].as<double>();
-	// double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
+	double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
+    double MIPERCENTAGE = vm["mipercentage"].as<double>();
+    const unsigned int numberOfSamplesMI =
+        static_cast<unsigned int>(numberOfPixels * MIPERCENTAGE);
 
 	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
 	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
-	// const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
+	const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
 
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
@@ -353,10 +360,11 @@ for(const auto& it : vm) {
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNumberOfThreads(NT);
 	metric->SetNGFSpacing(ngf);  // ensure spacing is applied
-	// metric->SetYota(YOTA);
-	// metric->SetYotaDerivative(YOTADERIVATIVE);
-	// metric->SetNumberOfThreads(NT);
-
+	metric->SetYota(YOTA);
+	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetHMINumberOfSamples( numberOfSamplesMI );
+	metric->SetRho(RHO);
+	metric->SetRhoDerivative(RHODERIVATIVE);
 	
 	metric->SetFixedEta(ETAF);
 	metric->SetMovingEta(ETAM);

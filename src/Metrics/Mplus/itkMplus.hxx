@@ -17,7 +17,7 @@ namespace itk
 		m_NGF = NGFType::New();
 		m_MSE = MSEType::New();
 		m_HMI = HMIType::New();
-		// m_NMI = NMIType::New();
+		m_NMI = NMIType::New();
 		m_INTERNALL_interpolator = LFType::New();
 		m_Lambda = 1.0;
 		m_LambdaDerivative = m_Lambda;
@@ -25,7 +25,7 @@ namespace itk
 		m_MANumberOfSamples = 20000;
 		m_MSENumberOfSamples = 20000;
 		m_HMINumberOfSamples = 20000;
-		// m_NMINumberOfSamples = 20000;
+		m_NMINumberOfSamples = 20000;
 		m_BinNumbers = 50;
 		m_NumberOfThreads = 1;
 		m_Evaluator = 0;
@@ -33,10 +33,12 @@ namespace itk
 		m_MovingEta = 1;
 		m_Alpha = 1.0;
 		m_AlphaDerivative = 1.0;
-		m_Nu = 1.0;
-		m_NuDerivative = 1.0;
-		// m_Yota = 1.0;
-		// m_YotaDerivative = 1.0;
+		m_Nu = 0.0;
+		m_NuDerivative = 0.0;
+		m_Yota = 0.0;
+		m_YotaDerivative = 0.0;
+		m_Rho =0.0;
+		m_RhoDerivative = 0.0;
 		m_UseCachingOfBSplineWeights = true;
 		m_UseExplicitPDFDerivatives = true;
 		m_NormalizeDerivatives = false;
@@ -83,7 +85,7 @@ namespace itk
 		
 		m_MSE->SetFixedImage(this->m_FixedImage);
 		m_MSE->SetMovingImage(this->m_MovingImage);
-		m_MSE->SetInterpolator(this->m_Interpolator); // m_MSE->SetInterpolator(this->m_INTERNALL_interpolator);
+		m_MSE->SetInterpolator(this->m_Interpolator); 
 		m_MSE->SetTransform(this->m_Transform);
 		m_MSE->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
 		m_MSE->UseAllPixelsOff();
@@ -177,41 +179,22 @@ namespace itk
 
 
 
-		// m_NMI->SetFixedImage(this->m_FixedImage);
-		// m_NMI->SetMovingImage(this->m_MovingImage);
-		// m_NMI->SetInterpolator(this->m_Interpolator);
-		// m_NMI->SetTransform(this->m_Transform);
-		// m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
-		// m_NMI->SetNumberOfThreads(this->m_NumberOfThreads);
-
-		// // Compute min/max for both images
-		// typedef itk::MinimumMaximumImageCalculator<FixedImageType> MinMaxCalcType;
-		// typename MinMaxCalcType::Pointer fixedMinMax = MinMaxCalcType::New();
-		// fixedMinMax->SetImage(this->m_FixedImage);
-		// fixedMinMax->Compute();
-
-		// typedef itk::MinimumMaximumImageCalculator<MovingImageType> MinMaxCalcType2;
-		// typename MinMaxCalcType2::Pointer movingMinMax = MinMaxCalcType2::New();
-		// movingMinMax->SetImage(this->m_MovingImage);
-		// movingMinMax->Compute();
-
-		// double minValue = std::min(fixedMinMax->GetMinimum(), movingMinMax->GetMinimum());
-		// double maxValue = std::max(fixedMinMax->GetMaximum(), movingMinMax->GetMaximum());
-
-		// itk::Array<double> lowerBound(1);
-		// lowerBound[0] = minValue;
-		// m_NMI->SetLowerBound(lowerBound);
-
-		// itk::Array<double> upperBound(1);
-		// upperBound[0] = maxValue;
-		// m_NMI->SetUpperBound(upperBound);
-
-		// m_NMI->ReinitializeSeed();
-		// m_NMI->Initialize();
-		// m_NMI->SetNumberOfFixedImageSamples(this->m_NMINumberOfSamples);
-		// m_NMI->SetPaddingValue(0);
-		// m_NMI->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
-		// m_NMI->UseAllPixelsOff();
+		m_NMI->SetTransform(    this->GetTransform() );
+		m_NMI->SetInterpolator(this->m_INTERNALL_interpolator);
+		m_NMI->SetFixedImage(   this->m_FixedImage );
+		m_NMI->SetMovingImage(  this->m_MovingImage );
+		m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+		
+		// histogram bins (v3 API)
+		{
+		  typename NMIType::HistogramSizeType histSize;
+		  histSize.Fill( this->m_BinNumbers );
+		  m_NMI->SetHistogramSize( histSize );
+		}
+		
+		m_NMI->SetNumberOfSpatialSamples( this->m_NMINumberOfSamples );
+		m_NMI->SetNumberOfThreads(        this->m_NumberOfThreads );
+		m_NMI->UseAllPixelsOff();
 
 
 		switch (m_Evaluator)
@@ -259,7 +242,7 @@ namespace itk
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	Mplus<TFixedImage, TMovingImage>::GetValue(const ParametersType &parameters) const
 	{
-		double a, b, c, d;
+		double a, b, c, d,e;
 
 		a = 0.0;
 		if (this->m_Alpha != 0.0)
@@ -272,10 +255,15 @@ namespace itk
 			c = this->GetMSEValue(parameters);
 		d = 0.0;
 		
-		if ( this->m_Yota != 0.0 )
+		if ( this->m_Rho != 0.0 )
 			d = this->GetHMIValue(parameters);
+		
+		e = 0.0;
+		if ( this->m_Yota != 0.0 )
+			e = this->GetNMIValue(parameters);
+		
 		// std::cout << "a: " << a << " b: " << b << " c: " << c << " d: " << d << std::endl;
-		return a + b + c + d;
+		return a + b + c + d +e;
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -306,13 +294,13 @@ namespace itk
 	{
 	return static_cast<MeasureType>( m_HMI->GetValue(parameters) * this->m_Yota );
 	}
-	// template <class TFixedImage, class TMovingImage>
-	// typename Mplus<TFixedImage, TMovingImage>::MeasureType
-	// Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
-	// {
+	template <class TFixedImage, class TMovingImage>
+	typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
+	{
 
-	// 	return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
-	// }
+		return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
+	}
 
 
 
@@ -344,10 +332,16 @@ namespace itk
 		
 		DerivativeType d;
 		d = parameters;
-		if (this->m_YotaDerivative != 0.0)
+		if (this->m_RhoDerivative != 0.0)
 			this->GetHMIDerivative(parameters, d);
 		else
 			d.Fill(0.0);
+		DerivativeType e;
+		e = parameters;
+		if (this->m_YotaDerivative != 0.0)
+			this->GetNMIDerivative(parameters, e);
+		else
+			e.Fill(0.0);
 
 			derivative = a;
 			#pragma omp parallel for
@@ -357,7 +351,8 @@ namespace itk
 				a[p] * this->m_AlphaDerivative
 				+ this->m_LambdaDerivative * b[p]
 				+ this->m_NuDerivative     * c[p]
-				+ this->m_YotaDerivative   * d[p];
+				+ this->m_RhoDerivative   * d[p];
+				+ this->m_YotaDerivative   * e[p];
 			}
 
 		}
@@ -380,14 +375,14 @@ namespace itk
 	  this->NormalizeDerivative(derivative);
 	}
 
-	// template <class TFixedImage, class TMovingImage>
-	// void
-	// Mplus<TFixedImage, TMovingImage>::GetNMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
-	// {
-	// 	m_NMI->GetDerivative(parameters, derivative);
+	template <class TFixedImage, class TMovingImage>
+	void
+	Mplus<TFixedImage, TMovingImage>::GetNMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	{
+		m_NMI->GetDerivative(parameters, derivative);
 		
-	// 	this->NormalizeDerivative(derivative);
-	// }
+		this->NormalizeDerivative(derivative);
+	}
 	template <class TFixedImage, class TMovingImage>
 	void
 	Mplus<TFixedImage, TMovingImage>::GetNGFDerivative(const ParametersType &parameters, DerivativeType &derivative) const
