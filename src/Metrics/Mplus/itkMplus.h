@@ -193,7 +193,7 @@ public:
 	norm = std::sqrt(norm);
 
 	// Check if norm is not zero to avoid division by zero
-	if (norm != 0.0) {
+	if (norm != 1.0e-10) {
 		#pragma omp parallel for
 		for (unsigned int i = 0; i < derivative.size(); ++i) {
 			derivative[i] /= norm;
@@ -273,13 +273,13 @@ private:
 	// purposely not implemented
 	void operator=(const Self &);
 
-
 	typename MattesType::Pointer m_MA;
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
 	typename HMIType::Pointer m_HMI;                                         
 	typename NMIType::Pointer m_NMI;
 	typename LFType::Pointer m_INTERNALL_interpolator;
+	
 	
 
 	typename TFixedImage::SpacingType m_NGFSpacing;

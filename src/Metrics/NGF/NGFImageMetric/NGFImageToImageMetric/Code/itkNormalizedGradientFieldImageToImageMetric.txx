@@ -295,8 +295,9 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetGradient(const TransformPar
 		
 		
 		// Eros Montin update 09/23/25
-		//The sign flip is needed because the ITK derivative operator (or your kernel) returns the gradient with a sign opposite to what your metric expects. This is a common issue when using finite difference operators.
-// If possible, fix the sign at the source (operator or kernel). If not, keep the flip and document it.
+		//The sign flip is needed because the ITK derivative operator returns the gradient with a sign opposite. 
+        
+
 		
 		iout.Value() *= -1; 
 
