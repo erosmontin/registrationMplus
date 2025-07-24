@@ -9,7 +9,8 @@ endif()
 project(PRJ_3DRegBsplines)
 
 # Find ITK.
-find_package(ITK REQUIRED)
+find_package(ITK REQUIRED
+)
 include(${ITK_USE_FILE})
 
 

@@ -9,6 +9,7 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "../NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkNormalizedGradientFieldImageToImageMetric.h"
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkMeanSquaresImageToImageMetric.h"
+#include "itkMutualInformationHistogramImageToImageMetric.h"
 
 // #include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
 namespace itk
@@ -142,6 +143,7 @@ public:
 	MeasureType GetNGFValue(const ParametersType & parameters) const;
 	MeasureType GetMAValue(const ParametersType & parameters) const;
 	MeasureType GetMSEValue(const ParametersType & parameters) const;
+	MeasureType GetHMIValue(const ParametersType & parameters) const;         // ← Added
 	// MeasureType GetNMIValue(const ParametersType & parameters) const;
 
 	/** Get the derivatives of the match measure. */
@@ -153,6 +155,8 @@ public:
 			DerivativeType & Derivative) const;
 	void GetMSEDerivative(const ParametersType & parameters,
 			DerivativeType & Derivative) const;
+	void        GetHMIDerivative(const ParametersType & parameters, 
+                              DerivativeType & Derivative) const;       // ← Added
 	// void GetNMIDerivative(const ParametersType & parameters,
 	// 		DerivativeType & Derivative) const;
 	void NormalizeDerivative(DerivativeType & Derivative) const;
@@ -200,6 +204,7 @@ if (maxVal != minVal)
 	unsigned int m_MANumberOfSamples;
 	unsigned int m_NGFNumberOfSamples;
 	unsigned int m_MSENumberOfSamples;
+	unsigned int m_HMINumberOfSamples;
 	// unsigned int m_NMINumberOfSamples;
 	double m_FixedEta;
 	double m_MovingEta;
@@ -226,6 +231,8 @@ protected:
 	typedef NormalizedGradientFieldImageToImageMetric<FixedImageType,MovingImageType> NGFType;
 	typedef LinearInterpolateImageFunction<FixedImageType,double > LFType;
 	typedef MeanSquaresImageToImageMetric<FixedImageType,MovingImageType> MSEType;
+	typedef MutualInformationHistogramImageToImageMetric<
+            FixedImageType,MovingImageType>                HMIType;
 	// typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
 
 
@@ -246,6 +253,7 @@ private:
 	typename MattesType::Pointer m_MA;
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
+	typename HMIType::Pointer m_HMI;                                         
 	// typename NMIType::Pointer m_NMI;
 	typename LFType::Pointer m_INTERNALL_interpolator;
 	//typename MSEType::Pointer m_MSE_INTERNALL_interpolator;

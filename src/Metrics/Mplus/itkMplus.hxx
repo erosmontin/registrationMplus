@@ -16,6 +16,7 @@ namespace itk
 		m_MA = MattesType::New();
 		m_NGF = NGFType::New();
 		m_MSE = MSEType::New();
+		m_HMI = HMIType::New();
 		// m_NMI = NMIType::New();
 		m_INTERNALL_interpolator = LFType::New();
 		m_Lambda = 1.0;
@@ -23,6 +24,7 @@ namespace itk
 		m_NGFNumberOfSamples = 20000;
 		m_MANumberOfSamples = 20000;
 		m_MSENumberOfSamples = 20000;
+		m_HMINumberOfSamples = 20000;
 		// m_NMINumberOfSamples = 20000;
 		m_BinNumbers = 50;
 		m_NumberOfThreads = 1;
@@ -90,6 +92,24 @@ namespace itk
 		m_MSE->SetNumberOfSpatialSamples(this->m_MSENumberOfSamples);
 		m_MSE->ReinitializeSeed();
 		m_MSE->Initialize();
+
+		m_HMI->SetFixedImage(this->m_FixedImage);
+		m_HMI->SetMovingImage(this->m_MovingImage);
+		m_HMI->SetInterpolator(this->m_Interpolator);
+		m_HMI->SetTransform(this->m_Transform);
+		m_HMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+
+		  {
+			    // fill a 2‑D histogram size (fixed×moving) with BinNumbers in each dimension
+			    typename HMIType::HistogramSizeType histogramSize;
+			    histogramSize.Fill(this->m_BinNumbers);
+			    m_HMI->SetHistogramSize(histogramSize);  // :contentReference[oaicite:0]{index=0}
+			  }
+		m_HMI->SetNumberOfSpatialSamples(this->m_HMINumberOfSamples);
+		m_HMI->SetNumberOfThreads(this->m_NumberOfThreads);
+		m_HMI->UseAllPixelsOff();
+		m_HMI->ReinitializeSeed();
+		m_HMI->Initialize();
 
 		// add a resampling filter to the NGF metric
 		if ((m_Lambda != 0) || (m_LambdaDerivative != 0))
@@ -251,8 +271,9 @@ namespace itk
 		if (this->m_Nu != 0.0)
 			c = this->GetMSEValue(parameters);
 		d = 0.0;
-		// if (this->m_Yota != 0.0)
-		// 	d = this->GetNMIValue(parameters);
+		
+		if ( this->m_Yota != 0.0 )
+			d = this->GetHMIValue(parameters);
 		// std::cout << "a: " << a << " b: " << b << " c: " << c << " d: " << d << std::endl;
 		return a + b + c + d;
 	}
@@ -278,6 +299,13 @@ namespace itk
 		return static_cast<MeasureType>(m_MSE->GetValue(parameters) * this->m_Nu);
 	}
 
+	template <class TFixedImage, class TMovingImage>
+	typename Mplus<TFixedImage,TMovingImage>::MeasureType
+	Mplus<TFixedImage, TMovingImage>
+	::GetHMIValue(const ParametersType & parameters) const
+	{
+	return static_cast<MeasureType>( m_HMI->GetValue(parameters) * this->m_Yota );
+	}
 	// template <class TFixedImage, class TMovingImage>
 	// typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	// Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
@@ -314,22 +342,25 @@ namespace itk
 		else
 			c.Fill(0.0);
 		
-		// DerivativeType d;
-		// d = parameters;
-		// if (this->m_YotaDerivative != 0.0)
-		// 	this->GetNMIDerivative(parameters, d);
-		// else
-		// 	d.Fill(0.0);
+		DerivativeType d;
+		d = parameters;
+		if (this->m_YotaDerivative != 0.0)
+			this->GetHMIDerivative(parameters, d);
+		else
+			d.Fill(0.0);
 
-		derivative = a;
-		double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this->m_NuDerivative;
-	#pragma omp parallel for
-		for (long unsigned int p = 0; p < derivative.GetSize(); p++)
-		{	
-			derivative[p] = a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p];
+			derivative = a;
+			#pragma omp parallel for
+			for ( long unsigned int p = 0; p < derivative.GetSize(); ++p )
+			{
+			  derivative[p] =
+				a[p] * this->m_AlphaDerivative
+				+ this->m_LambdaDerivative * b[p]
+				+ this->m_NuDerivative     * c[p]
+				+ this->m_YotaDerivative   * d[p];
+			}
 
 		}
-	}
 
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -338,6 +369,15 @@ namespace itk
 		m_MA->GetDerivative(parameters, derivative);
 		// normalize the derivative
 		this->NormalizeDerivative(derivative);
+	}
+
+	template <class TFixedImage, class TMovingImage>
+	void
+	Mplus<TFixedImage, TMovingImage>
+	::GetHMIDerivative(const ParametersType & parameters, DerivativeType & derivative) const
+	{
+	  m_HMI->GetDerivative(parameters, derivative);
+	  this->NormalizeDerivative(derivative);
 	}
 
 	// template <class TFixedImage, class TMovingImage>
