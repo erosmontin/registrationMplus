@@ -157,38 +157,55 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
     }
 
     // Main loop: cache Jacobian and gradient vector per pixel
-    for (size_t idx = 0; idx < numPixels; ++idx) {
-        const auto& index = indices[idx];
-        typename FixedImageType::PointType inputPoint;
-        this->m_FixedImage->TransformIndexToPhysicalPoint(index, inputPoint);
+    int numThreads = 1;
+    #ifdef _OPENMP
+    numThreads = omp_get_max_threads();
+    #endif
+    std::vector<DerivativeType> threadDerivatives(numThreads, DerivativeType(ParametersDimension));
+    for (int t = 0; t < numThreads; ++t)
+        threadDerivatives[t].Fill(NumericTraits<typename DerivativeType::ValueType>::Zero);
 
-        // Cache the Jacobian for this pixel
-        const TransformJacobianType& jacobian = this->m_Transform->GetJacobian(inputPoint);
+    #pragma omp parallel
+    {
+        int tid = 0;
+        #ifdef _OPENMP
+        tid = omp_get_thread_num();
+        #endif
 
-        const auto& gradVec = gradientBuffer[idx];
+        #pragma omp for
+        for (size_t idx = 0; idx < numPixels; ++idx) {
+            const auto& index = indices[idx];
+            typename FixedImageType::PointType inputPoint;
+            this->m_FixedImage->TransformIndexToPhysicalPoint(index, inputPoint);
+            const TransformJacobianType& jacobian = this->m_Transform->GetJacobian(inputPoint);
+            const auto& gradVec = gradientBuffer[idx];
 
-        for (unsigned int par = 0; par < ParametersDimension; ++par) {
-            // Early skip if Jacobian column is all zero
-            bool allZero = true;
-            for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
-                if (jacobian(dim, par) != 0.0) {
-                    allZero = false;
-                    break;
+            for (unsigned int par = 0; par < ParametersDimension; ++par) {
+                bool allZero = true;
+                for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
+                    if (jacobian(dim, par) != 0.0) {
+                        allZero = false;
+                        break;
+                    }
                 }
-            }
-            if (allZero) continue;
+                if (allZero) continue;
 
-            RealType sum = NumericTraits<RealType>::ZeroValue();
-            for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
-                auto jacobianValue = jacobian(dim, par);
-                auto gradientValue = gradVec[dim];
-                if (jacobianValue != 0.0 && gradientValue != 0.0) {
-                    sum += jacobianValue * gradientValue;
+                RealType sum = NumericTraits<RealType>::ZeroValue();
+                for (unsigned int dim = 0; dim < FI::ImageDimension; ++dim) {
+                    auto jacobianValue = jacobian(dim, par);
+                    auto gradientValue = gradVec[dim];
+                    if (jacobianValue != 0.0 && gradientValue != 0.0) {
+                        sum += jacobianValue * gradientValue;
+                    }
                 }
+                threadDerivatives[tid][par] += sum;
             }
-            derivative[par] += sum;
         }
     }
+
+    // Reduce
+    for (int t = 0; t < numThreads; ++t)
+        derivative += threadDerivatives[t];
 }
 
 template <class FI, class MI> 
