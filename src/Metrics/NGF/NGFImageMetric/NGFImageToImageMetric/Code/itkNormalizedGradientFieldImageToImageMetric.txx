@@ -148,15 +148,6 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
     // Use raw buffer pointers for cache-friendly access
     const auto* gradientBuffer = gradient->GetBufferPointer();
 
-    // Precompute all indices for the region (cache-friendly, sequential access)
-    std::vector<typename FixedImageType::IndexType> indices;
-    indices.reserve(numPixels); // Reserve memory to avoid reallocations
-    itk::ImageRegionConstIteratorWithIndex<FixedNGFType> ifi(m_FixedNGF, region);
-    for (size_t idx = 0; idx < numPixels; ++idx, ++ifi) {
-        indices.push_back(ifi.GetIndex());
-    }
-
-    // Main loop: cache Jacobian and gradient vector per pixel
     int numThreads = 1;
     #ifdef _OPENMP
     numThreads = omp_get_max_threads();
@@ -172,9 +163,19 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
         tid = omp_get_thread_num();
         #endif
 
-        #pragma omp for
-        for (size_t idx = 0; idx < numPixels; ++idx) {
-            const auto& index = indices[idx];
+        itk::ImageRegionConstIteratorWithIndex<FixedNGFType> ifi(m_FixedNGF, region);
+        // Advance iterator to the correct starting point for this thread
+        size_t idx = 0;
+        size_t start = 0, end = numPixels;
+        #ifdef _OPENMP
+        size_t chunk = (numPixels + numThreads - 1) / numThreads;
+        start = tid * chunk;
+        end = std::min(numPixels, (tid + 1) * chunk);
+        #endif
+        for (; idx < start; ++idx, ++ifi) {}
+
+        for (; idx < end && !ifi.IsAtEnd(); ++idx, ++ifi) {
+            typename FixedImageType::IndexType index = ifi.GetIndex();
             typename FixedImageType::PointType inputPoint;
             this->m_FixedImage->TransformIndexToPhysicalPoint(index, inputPoint);
             const TransformJacobianType& jacobian = this->m_Transform->GetJacobian(inputPoint);
@@ -208,17 +209,18 @@ void NormalizedGradientFieldImageToImageMetric<FI,MI>::GetDerivative(
         derivative += threadDerivatives[t];
 }
 
+// GetValue: cache value
 template <class FI, class MI> 
 typename NormalizedGradientFieldImageToImageMetric<FI,MI>::MeasureType
 NormalizedGradientFieldImageToImageMetric<FI,MI>::GetValue( const TransformParametersType & parameters ) const
 {
-    // Only update if parameters have changed
     if (m_CachedValueParameters != parameters) {
         this->m_Transform->SetParameters(parameters); 
         m_MovingNGFEvaluator->Update(); 
         m_CachedValueParameters = parameters;
+        m_CachedValue = DoGetValue();
     }
-    return DoGetValue(); 
+    return m_CachedValue; 
 }
 
 template <class FI, class MI> 
@@ -238,17 +240,23 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::DoGetValue(  ) const
 	return value / this->GetFixedImageRegion().GetNumberOfPixels(); 
 }
 
+// GetValueAndDerivative: update both caches
 template <class FI, class MI> 
 void	
 NormalizedGradientFieldImageToImageMetric<FI,MI>::GetValueAndDerivative( const TransformParametersType & parameters, 
 									  MeasureType& Value, DerivativeType& derivative ) const
 {
-	// this is certainly not the most optimal version, because 
-	// some evaluations are run twice,
-	// but GetDerivative is already messy enough, and duplicating it's code 
-	// here is really not a nice idea. 
-	GetDerivative(parameters, derivative); 
-	Value = DoGetValue(); 
+    // Update derivative (which may update m_MovingNGF etc.)
+    GetDerivative(parameters, derivative);
+
+    // Use cached value if available
+    if (m_CachedValueParameters != parameters) {
+        this->m_Transform->SetParameters(parameters); 
+        m_MovingNGFEvaluator->Update(); 
+        m_CachedValueParameters = parameters;
+        m_CachedValue = DoGetValue();
+    }
+    Value = m_CachedValue;
 }
 
 template <class FI, class MI> 
@@ -263,7 +271,7 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetGradient(const TransformPar
 	ImageRegionConstIterator<FixedNGFType> ifi(m_FixedNGF, this->GetFixedImageRegion());
 
 	typename MovingNGFType::Pointer gradient = MovingNGFType::New(); 
-	gradient->SetRegions(this->GetFixedImageRegion().GetSize()); 
+	gradient->SetRegions(this->GetFixedImageRegion()); 
 	gradient->Allocate(); 
 	
 	ImageRegionIterator<MovingNGFType> iout( gradient, this->GetFixedImageRegion());
