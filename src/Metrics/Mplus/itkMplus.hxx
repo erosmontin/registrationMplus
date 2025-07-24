@@ -5,6 +5,13 @@
 #include "../NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkNGFMetricKernel.h"
 #include "itkMinimumMaximumImageCalculator.h"
 
+// <<< add for auto-eta
+#include "itkGradientMagnitudeImageFilter.h"
+#include "itkImageRegionIterator.h"
+#include <vector>
+#include <algorithm>
+// >>>
+
 namespace itk
 {
 	/**
@@ -19,7 +26,7 @@ namespace itk
 		m_HMI = HMIType::New();
 		m_NMI = NMIType::New();
 		m_INTERNALL_interpolator = LFType::New();
-		m_Lambda = 1.0;
+		m_Lambda = 0.0;
 		m_LambdaDerivative = m_Lambda;
 		m_NGFNumberOfSamples = 20000;
 		m_MANumberOfSamples = 20000;
@@ -43,6 +50,9 @@ namespace itk
 		m_UseExplicitPDFDerivatives = true;
 		m_NormalizeDerivatives = false;
 		m_NGFSpacing.Fill(4.0);
+		// <<< default off
+		m_AutoEstimateEta = false;
+		// >>>
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -68,6 +78,39 @@ namespace itk
 
 		Superclass::Initialize();
 
+		// <<< auto-estimate η?
+		if (( this->m_AutoEstimateEta ) & ((this->m_Lambda !=0.0) | (this->m_LambdaDerivative != 0.0)))
+		{
+			std::cout<< "Auto-estimating η for NGF metric..." << std::endl;
+			using GradFilterType = itk::GradientMagnitudeImageFilter<FixedImageType, FixedImageType>;
+			typename GradFilterType::Pointer gradFilter = GradFilterType::New();
+			gradFilter->SetInput( this->m_FixedImage );
+			gradFilter->Update();
+
+			std::vector<double> mags;
+			mags.reserve(100000);
+			itk::ImageRegionConstIterator<FixedImageType> it(
+				gradFilter->GetOutput(),
+				gradFilter->GetOutput()->GetLargestPossibleRegion()
+			);
+			size_t count = 0;
+			for ( ; !it.IsAtEnd(); ++it )
+			{
+				mags.push_back( it.Get() );
+				if (++count >= 100000) break;
+			}
+			std::sort( mags.begin(), mags.end() );
+			const double percentile = 0.10;
+			size_t idx = static_cast<size_t>(percentile * mags.size());
+			double eta = mags[idx];
+			constexpr double kMinEta = 1e-8;
+			if (eta < kMinEta) eta = kMinEta;
+			this->SetFixedEta( eta );
+			this->SetMovingEta( eta );
+			std::cout << "Estimated η: " << eta << std::endl;
+		}
+		// >>>
+		
 		m_MA->SetFixedImage(this->m_FixedImage);
 		m_MA->SetMovingImage(this->m_MovingImage);
 		m_MA->SetInterpolator(this->m_Interpolator);
@@ -180,7 +223,7 @@ namespace itk
 
 
 		m_NMI->SetTransform(    this->GetTransform() );
-		m_NMI->SetInterpolator(this->m_INTERNALL_interpolator);
+		m_NMI->SetInterpolator(this->m_Interpolator);
 		m_NMI->SetFixedImage(   this->m_FixedImage );
 		m_NMI->SetMovingImage(  this->m_MovingImage );
 		m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
@@ -195,7 +238,8 @@ namespace itk
 		m_NMI->SetNumberOfSpatialSamples( this->m_NMINumberOfSamples );
 		m_NMI->SetNumberOfThreads(        this->m_NumberOfThreads );
 		m_NMI->UseAllPixelsOff();
-
+		m_NMI->ReinitializeSeed();
+		m_NMI->Initialize();
 
 		switch (m_Evaluator)
 		{
@@ -351,7 +395,7 @@ namespace itk
 				a[p] * this->m_AlphaDerivative
 				+ this->m_LambdaDerivative * b[p]
 				+ this->m_NuDerivative     * c[p]
-				+ this->m_RhoDerivative   * d[p];
+				+ this->m_RhoDerivative   * d[p]
 				+ this->m_YotaDerivative   * e[p];
 			}
 

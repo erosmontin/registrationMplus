@@ -111,6 +111,9 @@ int main( int argc, char *argv[] )
         ("rho",             po::value<double>()->default_value(0.0), "rho weight for histogram‐MI (HMI)")
         ("rhoderivative",   po::value<double>()->default_value(0.0), "rho derivative for histogram‐MI")
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
+		("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
+        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
+
  ;
 	
 
@@ -250,20 +253,15 @@ for(const auto& it : vm) {
 	
 	
 // #let's fix a few things
-	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
-	{
-		if (ETAF==-1)
-		{
-			ETAF=itk::GetImageNoise<FixedImageType>(fixedImage);
-		}
-		if (ETAM==-1)
-		{
-			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
-		}
-		printf("Fixed image noise: %f\n",ETAF);
-		printf("Moving image noise: %f\n",ETAM);
+if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
+{
 
+	if ((ETAF==-1) || (ETAM==-1))
+	{
+		metric->SetAutoEstimateEta(true);
 	}
+}
+
 
 	
 	transform->SetIdentity();

@@ -76,6 +76,11 @@ public:
 	itkGetMacro( MovingEta, double);
 	itkSetMacro( MovingEta, double);
 
+// <<< new: toggle auto-estimate η for NGF
+  itkGetMacro( AutoEstimateEta, bool );
+  itkSetMacro( AutoEstimateEta, bool );
+// >>>
+
 	itkGetMacro( NumberOfThreads, unsigned int);
 	itkSetMacro( NumberOfThreads, unsigned int);
 	
@@ -237,6 +242,9 @@ if (maxVal != minVal)
 	bool m_UseCachingOfBSplineWeights;
 	bool m_UseExplicitPDFDerivatives;
 	bool m_NormalizeDerivatives;
+	// <<< new member
+	bool   m_AutoEstimateEta;
+	// >>>
 
 protected:
 

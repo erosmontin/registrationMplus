@@ -104,8 +104,8 @@ int main( int argc, char *argv[] )
 		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
 		// ("cir,c", po::value<boost::optional<std::vector<double>>>()->default_value(boost::none, ""), "CR 3D point index (x y z)")
 		// ("CIR,C", po::value<std::vector<double>>()->multitoken()->default_value(boost::none, ""), "CR 3D index index (i j k)")
-        // ("yota,y", po::value<double>(&YOTA)->default_value(0.1), "Yota value NMI 0.1")
-        // ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
+        ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
+        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
         ("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
         ("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
         ("nmipercentage",   po::value<double>()->default_value(0.1), "Normalized‐MI percentage of pixels used (0.1 = 10%)")
@@ -240,6 +240,7 @@ for(const auto& it : vm) {
     double RHO           = vm["rho"].as<double>();
     double RHODERIVATIVE = vm["rhoderivative"].as<double>();
 
+
 	auto optimizer = OptimizerType::New();
 
 
@@ -280,20 +281,14 @@ for(const auto& it : vm) {
 	
 	
 // #let's fix a few things
-	if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
-	{
-		if (ETAF==-1)
-		{
-			ETAF=itk::GetImageNoise<FixedImageType>(fixedImage);
-		}
-		if (ETAM==-1)
-		{
-			ETAM=itk::GetImageNoise<MovingImageType>(movingImage);
-		}
-		printf("Fixed image noise: %f\n",ETAF);
-		printf("Moving image noise: %f\n",ETAM);
+if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
+{
 
+	if ((ETAF==-1) || (ETAM==-1))
+	{
+		metric->SetAutoEstimateEta(true);
 	}
+}
 
 	
 	transform->SetIdentity();
