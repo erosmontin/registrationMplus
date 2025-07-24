@@ -1,6 +1,3 @@
-
-
-
 //DeformableRegistration6
 #include "itkImageRegistrationMethod.h"
 #include "../../../Metrics/Mplus/itkMplus.h"
@@ -28,6 +25,7 @@
 #include "itkMemoryProbesCollectorBase.h"
 
 #include <boost/program_options.hpp>
+#include <vector>  // add this include at top
 namespace po = boost::program_options;
 
 const unsigned int ImageDimension = 3;
@@ -112,8 +110,13 @@ int main( int argc, char *argv[] )
 		("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
 		("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
 		("verbose,V", po::value<bool>()->default_value(false), "verbose")
-        ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
-        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
+        // ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
+        // ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives")
+        ("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
+        ("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+        // ("nmipercentage", po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
+        ("ngfspacing", po::value<std::string>()->default_value("4,4,4"),
+ "NGF spacing per dimension (x,y,z)")
 
     ;
 	
@@ -123,6 +126,15 @@ int main( int argc, char *argv[] )
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
+auto s = vm["ngfspacing"].as<std::string>();
+std::replace(s.begin(), s.end(), ',', ' ');
+std::istringstream iss(s);
+std::vector<double> tmp((std::istream_iterator<double>(iss)),
+                        std::istream_iterator<double>());
+if(tmp.size()!=ImageDimension){ /* error */ }
+ImageType::SpacingType ngf;
+for(unsigned i=0;i<ImageDimension;++i) ngf[i]=tmp[i];
+metric->SetNGFSpacing(ngf);
 
 	if (vm.count("help") || !vm.count("fixedimage") || !vm.count("movingimage") || !vm.count("outputimage") || !vm.count("vfout")){
     std::cout << desc << "\n";
@@ -319,9 +331,17 @@ for(const auto& it : vm) {
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 	const unsigned int numberOfSamplesMA =static_cast< unsigned int >( numberOfPixels * MAPERCENTAGE );
 
+	double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
+	double MSEPERCENTAGE = vm["msepercentage"].as<double>();
+	// double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
+
+	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
+	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
+	// const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
+
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
-	metric->SetMSENumberOfSamples(numberOfSamplesMA);
+	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetUseCachingOfBSplineWeights(TB);
@@ -330,10 +350,12 @@ for(const auto& it : vm) {
 	metric->SetNuDerivative(NUDERIVATIVE);
 	metric->SetLambda(LAMBDA);
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
-	metric->SetNGFNumberOfSamples(numberOfSamplesMA);
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNumberOfThreads(NT);
+	metric->SetNGFSpacing(ngf);  // ensure spacing is applied
+	// metric->SetYota(YOTA);
+	// metric->SetYotaDerivative(YOTADERIVATIVE);
+	// metric->SetNumberOfThreads(NT);
 
 	
 	metric->SetFixedEta(ETAF);

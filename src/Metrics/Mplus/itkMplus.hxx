@@ -3,6 +3,7 @@
 
 #include "itkMplus.h"
 #include "../NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkNGFMetricKernel.h"
+#include "itkMinimumMaximumImageCalculator.h"
 
 namespace itk
 {
@@ -15,14 +16,14 @@ namespace itk
 		m_MA = MattesType::New();
 		m_NGF = NGFType::New();
 		m_MSE = MSEType::New();
-		m_NMI = NMIType::New();
+		// m_NMI = NMIType::New();
 		m_INTERNALL_interpolator = LFType::New();
 		m_Lambda = 1.0;
 		m_LambdaDerivative = m_Lambda;
 		m_NGFNumberOfSamples = 20000;
 		m_MANumberOfSamples = 20000;
 		m_MSENumberOfSamples = 20000;
-		m_NMINumberOfSamples = 20000;
+		// m_NMINumberOfSamples = 20000;
 		m_BinNumbers = 50;
 		m_NumberOfThreads = 1;
 		m_Evaluator = 0;
@@ -32,12 +33,12 @@ namespace itk
 		m_AlphaDerivative = 1.0;
 		m_Nu = 1.0;
 		m_NuDerivative = 1.0;
-		m_Yota = 1.0;
-		m_YotaDerivative = 1.0;
-
+		// m_Yota = 1.0;
+		// m_YotaDerivative = 1.0;
 		m_UseCachingOfBSplineWeights = true;
 		m_UseExplicitPDFDerivatives = true;
 		m_NormalizeDerivatives = false;
+		m_NGFSpacing.Fill(4.0);
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -77,6 +78,7 @@ namespace itk
 		m_MA->ReinitializeSeed();
 		m_MA->Initialize();
 
+		
 		m_MSE->SetFixedImage(this->m_FixedImage);
 		m_MSE->SetMovingImage(this->m_MovingImage);
 		m_MSE->SetInterpolator(this->m_Interpolator); // m_MSE->SetInterpolator(this->m_INTERNALL_interpolator);
@@ -90,40 +92,106 @@ namespace itk
 		m_MSE->Initialize();
 
 		// add a resampling filter to the NGF metric
+		if ((m_Lambda != 0) || (m_LambdaDerivative != 0))
+		{
+			// Desired NGF spacing per dimension
+			const typename TFixedImage::SpacingType newSpacing = this->m_NGFSpacing;
 
-		m_NGF->SetFixedImage(this->m_FixedImage);
-		m_NGF->SetMovingImage(this->m_MovingImage);
+			// Get original size and spacing
+			typename TFixedImage::SizeType originalSize = this->m_FixedImage->GetLargestPossibleRegion().GetSize();
+			typename TFixedImage::SpacingType originalSpacing = this->m_FixedImage->GetSpacing();
+
+			// Compute downsampled size so that
+			// downsampledSize[d] * newSpacing[d] >= originalSize[d] * originalSpacing[d]
+			typename TFixedImage::SizeType downsampledSize;
+			for (unsigned int d = 0; d < FixedImageType::ImageDimension; ++d)
+			{
+				const double extent = static_cast<double>(originalSize[d]) * originalSpacing[d];
+				downsampledSize[d] = static_cast<typename SizeType::SizeValueType>(
+					std::ceil(extent / newSpacing[d])
+				);
+			}
+
+			// Fixed image resampler
+			using FixedResampleFilterType = itk::ResampleImageFilter<FixedImageType, FixedImageType>;
+			auto fixedResampler = FixedResampleFilterType::New();
+			fixedResampler->SetInput(this->m_FixedImage);
+			fixedResampler->SetSize(downsampledSize);
+			fixedResampler->SetOutputSpacing(newSpacing);
+			fixedResampler->SetOutputOrigin(this->m_FixedImage->GetOrigin());
+			fixedResampler->SetOutputDirection(this->m_FixedImage->GetDirection());
+			fixedResampler->Update();
+			auto downsampledFixed = fixedResampler->GetOutput();
+
+			// Moving image resampler
+			using MovingResampleFilterType = itk::ResampleImageFilter<MovingImageType, MovingImageType>;
+			auto movingResampler = MovingResampleFilterType::New();
+			movingResampler->SetInput(this->m_MovingImage);
+			movingResampler->SetSize(downsampledSize);
+			movingResampler->SetOutputSpacing(newSpacing);
+			movingResampler->SetOutputOrigin(this->m_MovingImage->GetOrigin());
+			movingResampler->SetOutputDirection(this->m_MovingImage->GetDirection());
+			movingResampler->Update();
+			auto downsampledMoving = movingResampler->GetOutput();
+
+			// Set downsampled images on NGF
+			m_NGF->SetFixedImage(downsampledFixed);
+			m_NGF->SetMovingImage(downsampledMoving);
+		}
+		else
+		{
+			m_NGF->SetFixedImage(this->m_FixedImage);
+			m_NGF->SetMovingImage(this->m_MovingImage);
+		}
 		m_NGF->SetInterpolator(this->m_INTERNALL_interpolator);
 		m_NGF->SetTransform(this->m_Transform);
 		m_NGF->SetNumberOfSpatialSamples(this->m_NGFNumberOfSamples);
 		m_NGF->SetNumberOfThreads(this->m_NumberOfThreads);
 		m_NGF->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
 		m_NGF->UseAllPixelsOff();
-		RegionType inputRegion = this->m_FixedImage->GetRequestedRegion();
+		// RegionType inputRegion = this->m_FixedImage->GetRequestedRegion();
+		RegionType inputRegion = this->m_NGF->GetFixedImage()->GetRequestedRegion();
 		m_NGF->SetFixedNoise(this->m_FixedEta); // this NGF noise can be considered the eta parameter
 		m_NGF->SetMovingNoise(this->m_MovingEta);
 		m_NGF->SetFixedImageRegion(inputRegion);
 
 
 
-		m_NMI->SetFixedImage(this->m_FixedImage);
-		m_NMI->SetMovingImage(this->m_MovingImage);
-		m_NMI->SetInterpolator(this->m_Interpolator);
-		m_NMI->SetTransform(this->m_Transform);
-		m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
-		m_NMI->SetNumberOfThreads(this->m_NumberOfThreads);
-itk::Array<double> lowerBound(1);
-lowerBound[0] = 0;
-m_NMI->SetLowerBound(lowerBound);		
-itk::Array<double> upperBound(1);
-upperBound[0] = 255;
-m_NMI->SetUpperBound(upperBound);
-		m_NMI->ReinitializeSeed();
-		m_NMI->Initialize();
-		m_NMI->SetNumberOfFixedImageSamples(this->m_NMINumberOfSamples);
-		m_NMI->SetPaddingValue(0);
-		m_NMI->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
-		m_NMI->UseAllPixelsOff();
+		// m_NMI->SetFixedImage(this->m_FixedImage);
+		// m_NMI->SetMovingImage(this->m_MovingImage);
+		// m_NMI->SetInterpolator(this->m_Interpolator);
+		// m_NMI->SetTransform(this->m_Transform);
+		// m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+		// m_NMI->SetNumberOfThreads(this->m_NumberOfThreads);
+
+		// // Compute min/max for both images
+		// typedef itk::MinimumMaximumImageCalculator<FixedImageType> MinMaxCalcType;
+		// typename MinMaxCalcType::Pointer fixedMinMax = MinMaxCalcType::New();
+		// fixedMinMax->SetImage(this->m_FixedImage);
+		// fixedMinMax->Compute();
+
+		// typedef itk::MinimumMaximumImageCalculator<MovingImageType> MinMaxCalcType2;
+		// typename MinMaxCalcType2::Pointer movingMinMax = MinMaxCalcType2::New();
+		// movingMinMax->SetImage(this->m_MovingImage);
+		// movingMinMax->Compute();
+
+		// double minValue = std::min(fixedMinMax->GetMinimum(), movingMinMax->GetMinimum());
+		// double maxValue = std::max(fixedMinMax->GetMaximum(), movingMinMax->GetMaximum());
+
+		// itk::Array<double> lowerBound(1);
+		// lowerBound[0] = minValue;
+		// m_NMI->SetLowerBound(lowerBound);
+
+		// itk::Array<double> upperBound(1);
+		// upperBound[0] = maxValue;
+		// m_NMI->SetUpperBound(upperBound);
+
+		// m_NMI->ReinitializeSeed();
+		// m_NMI->Initialize();
+		// m_NMI->SetNumberOfFixedImageSamples(this->m_NMINumberOfSamples);
+		// m_NMI->SetPaddingValue(0);
+		// m_NMI->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
+		// m_NMI->UseAllPixelsOff();
 
 
 		switch (m_Evaluator)
@@ -183,8 +251,9 @@ m_NMI->SetUpperBound(upperBound);
 		if (this->m_Nu != 0.0)
 			c = this->GetMSEValue(parameters);
 		d = 0.0;
-		if (this->m_Yota != 0.0)
-			d = this->GetNMIValue(parameters);
+		// if (this->m_Yota != 0.0)
+		// 	d = this->GetNMIValue(parameters);
+		// std::cout << "a: " << a << " b: " << b << " c: " << c << " d: " << d << std::endl;
 		return a + b + c + d;
 	}
 
@@ -209,12 +278,13 @@ m_NMI->SetUpperBound(upperBound);
 		return static_cast<MeasureType>(m_MSE->GetValue(parameters) * this->m_Nu);
 	}
 
-	template <class TFixedImage, class TMovingImage>
-	typename Mplus<TFixedImage, TMovingImage>::MeasureType
-	Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
-	{
-		return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
-	}
+	// template <class TFixedImage, class TMovingImage>
+	// typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	// Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
+	// {
+
+	// 	return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
+	// }
 
 
 
@@ -244,20 +314,20 @@ m_NMI->SetUpperBound(upperBound);
 		else
 			c.Fill(0.0);
 		
-		DerivativeType d;
-		d = parameters;
-		if (this->m_YotaDerivative != 0.0)
-			this->GetNMIDerivative(parameters, d);
-		else
-			d.Fill(0.0);
+		// DerivativeType d;
+		// d = parameters;
+		// if (this->m_YotaDerivative != 0.0)
+		// 	this->GetNMIDerivative(parameters, d);
+		// else
+		// 	d.Fill(0.0);
 
 		derivative = a;
-double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this->m_NuDerivative+ this->m_YotaDerivative;
-#pragma omp parallel for
+		double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this->m_NuDerivative;
+	#pragma omp parallel for
 		for (long unsigned int p = 0; p < derivative.GetSize(); p++)
 		{	
-			derivative[p] = a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p] + this->m_YotaDerivative * d[p];
-			// derivative[p] = derivative[p] / derivativeSum;	
+			derivative[p] = a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p];
+
 		}
 	}
 
@@ -270,14 +340,14 @@ double derivativeSum = this->m_AlphaDerivative + this->m_LambdaDerivative + this
 		this->NormalizeDerivative(derivative);
 	}
 
-	template <class TFixedImage, class TMovingImage>
-	void
-	Mplus<TFixedImage, TMovingImage>::GetNMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
-	{
-		m_NMI->GetDerivative(parameters, derivative);
+	// template <class TFixedImage, class TMovingImage>
+	// void
+	// Mplus<TFixedImage, TMovingImage>::GetNMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	// {
+	// 	m_NMI->GetDerivative(parameters, derivative);
 		
-		this->NormalizeDerivative(derivative);
-	}
+	// 	this->NormalizeDerivative(derivative);
+	// }
 	template <class TFixedImage, class TMovingImage>
 	void
 	Mplus<TFixedImage, TMovingImage>::GetNGFDerivative(const ParametersType &parameters, DerivativeType &derivative) const

@@ -10,7 +10,7 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkMeanSquaresImageToImageMetric.h"
 
-#include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
+// #include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
 namespace itk
 {
 template <class TFixedImage, class TMovingImage>
@@ -94,6 +94,10 @@ public:
 	itkGetMacro( YotaDerivative, double);
 	itkSetMacro( YotaDerivative, double);
 
+	void SetNGFSpacing(const typename TFixedImage::SpacingType& spacing) { m_NGFSpacing = spacing; }
+	typename TFixedImage::SpacingType GetNGFSpacing() const { return m_NGFSpacing; }
+
+
 
 
 
@@ -138,7 +142,7 @@ public:
 	MeasureType GetNGFValue(const ParametersType & parameters) const;
 	MeasureType GetMAValue(const ParametersType & parameters) const;
 	MeasureType GetMSEValue(const ParametersType & parameters) const;
-	MeasureType GetNMIValue(const ParametersType & parameters) const;
+	// MeasureType GetNMIValue(const ParametersType & parameters) const;
 
 	/** Get the derivatives of the match measure. */
 	void GetDerivative(const ParametersType & parameters,
@@ -149,8 +153,8 @@ public:
 			DerivativeType & Derivative) const;
 	void GetMSEDerivative(const ParametersType & parameters,
 			DerivativeType & Derivative) const;
-	void GetNMIDerivative(const ParametersType & parameters,
-			DerivativeType & Derivative) const;
+	// void GetNMIDerivative(const ParametersType & parameters,
+	// 		DerivativeType & Derivative) const;
 	void NormalizeDerivative(DerivativeType & Derivative) const;
 	/**  Get the value and derivatives for single valued optimizers. */
 	void GetValueAndDerivative(const ParametersType & parameters,MeasureType & Value,DerivativeType & Derivative) const;
@@ -196,7 +200,7 @@ if (maxVal != minVal)
 	unsigned int m_MANumberOfSamples;
 	unsigned int m_NGFNumberOfSamples;
 	unsigned int m_MSENumberOfSamples;
-	unsigned int m_NMINumberOfSamples;
+	// unsigned int m_NMINumberOfSamples;
 	double m_FixedEta;
 	double m_MovingEta;
 	double m_Lambda;
@@ -222,7 +226,7 @@ protected:
 	typedef NormalizedGradientFieldImageToImageMetric<FixedImageType,MovingImageType> NGFType;
 	typedef LinearInterpolateImageFunction<FixedImageType,double > LFType;
 	typedef MeanSquaresImageToImageMetric<FixedImageType,MovingImageType> MSEType;
-	typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
+	// typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
 
 
 
@@ -242,11 +246,11 @@ private:
 	typename MattesType::Pointer m_MA;
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
-	typename NMIType::Pointer m_NMI;
+	// typename NMIType::Pointer m_NMI;
 	typename LFType::Pointer m_INTERNALL_interpolator;
 	//typename MSEType::Pointer m_MSE_INTERNALL_interpolator;
 
-
+	typename TFixedImage::SpacingType m_NGFSpacing;
 
 
 
