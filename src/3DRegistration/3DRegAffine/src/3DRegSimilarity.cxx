@@ -67,9 +67,9 @@ int main( int argc, char *argv[] )
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
 	"Allowed options for alpha MI + lambda NGF +  nu MSE +yota NMI\n\n");
-    std::string method;
+
 	bool ND=false;
-	double YOTA=0.1;
+	double YOTA=0;
 	double YOTADERIVATIVE=0;
 	desc.add_options()
 	    ("help,h", "produce help message")
@@ -80,7 +80,6 @@ int main( int argc, char *argv[] )
         ("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")
 	    ("alpha,a", po::value<double>()->default_value(1.0), "alpha value MI 1.0")
 		("alphaderivative,A", po::value<double>()->default_value(1.0), "alpha derivative MI 1.0")
-		("subtype", po::value<std::string>(&method)->default_value("affine"), "Subtype (translation, rotation, scaling, affine)")
 		("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")
         ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
 		("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
@@ -104,14 +103,14 @@ int main( int argc, char *argv[] )
 		("normalizederivatives,Z", po::value<bool>(&ND)->default_value(false), "Normalize derivatives")
 		// ("cir,c", po::value<boost::optional<std::vector<double>>>()->default_value(boost::none, ""), "CR 3D point index (x y z)")
 		// ("CIR,C", po::value<std::vector<double>>()->multitoken()->default_value(boost::none, ""), "CR 3D index index (i j k)")
-        ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
-        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
-        ("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+		("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value Normalize correlazion (NC) 0.1")
+		("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NC 0 no derivatives")        
+		("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
         ("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
-        ("nmipercentage",   po::value<double>()->default_value(0.1), "Normalized‐MI percentage of pixels used (0.1 = 10%)")
-        ("mipercentage,p",  po::value<double>()->default_value(0.1), "Histogram‐MI percentage of pixels used (0.1 = 10%)")
-        ("rho",             po::value<double>()->default_value(0.0), "rho weight for histogram‐MI (HMI)")
-        ("rhoderivative",   po::value<double>()->default_value(0.0), "rho derivative for histogram‐MI")
+		("ncpercentage", po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
+		("gdpercentage,p", po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")        
+		// ("rho", po::value<double>()->default_value(0.0), "rho weight for Gradient Differnece (GD)")
+    	// ("rhoderivative", po::value<double>()->default_value(0.0), "rho derivative for GD")
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"),
                              "NGF spacing per dimension (x,y,z)")
  ;
@@ -122,36 +121,27 @@ int main( int argc, char *argv[] )
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
+	bool NORMALIZE_DERIVATIVES = vm["normalizederivatives"].as<bool>();
 
 	if (vm.count("help") || !vm.count("fixedimage") || !vm.count("movingimage") || !vm.count("outputimage") || !vm.count("vfout")){
     std::cout << desc << "\n";
     return 1;
 	}
 
-    // parse ngfspacing string into a SpacingType
-    {
-        auto s = vm["ngfspacing"].as<std::string>();
-        std::replace(s.begin(), s.end(), ',', ' ');
-        std::istringstream iss(s);
-        std::vector<double> tmp{
-            std::istream_iterator<double>(iss),
-            std::istream_iterator<double>()};
-        if (tmp.size() != ImageDimension)
-        {
-            std::cerr << "Error: ngfspacing must have "
-                      << ImageDimension << " comma–separated values\n";
-            return EXIT_FAILURE;
-        }
-        MovingImageType::SpacingType ngf;
-        for (unsigned i = 0; i < ImageDimension; ++i)
-        {
-            ngf[i] = tmp[i];
-        }
-        // store it in vm for later use
-        vm.insert(std::make_pair("parsed_ngfspacing",
-            po::variable_value(boost::any(ngf), false)));
-    }
+	auto s = vm["ngfspacing"].as<std::string>();
+	std::replace(s.begin(), s.end(), ',', ' ');
+	std::istringstream iss(s);
+	std::vector<double> tmp((std::istream_iterator<double>(iss)),
+							std::istream_iterator<double>());
+	if (tmp.size() != ImageDimension)
+	{ /* error */
+	}
+	FixedImageType::SpacingType ngf;
+	for (unsigned i = 0; i < ImageDimension; ++i)
+		ngf[i] = tmp[i];
 
+		if (vm["verbose"].as<bool>())
+	{
 for(const auto& it : vm) {
 	std::cout << "Option: " << it.first.c_str() << "\nValue: ";
 	
@@ -174,7 +164,7 @@ for(const auto& it : vm) {
 	}
 	std::cout << "\n-------------------\n";
 }
-
+	}
     std::string fixedImageFN = vm["fixedimage"].as<std::string>();
     std::string movingImageFN = vm["movingimage"].as<std::string>();
 
@@ -232,13 +222,13 @@ for(const auto& it : vm) {
 	// 	}
 		
 	// }
+   
+	double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
+	double MSEPERCENTAGE = vm["msepercentage"].as<double>();
+	double NCPERCENTAGE = vm["ncpercentage"].as<double>();
 
-    double MSEPERCENTAGE = vm["msepercentage"].as<double>();
-    double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
-    double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
-    double MIPERCENTAGE  = vm["mipercentage"].as<double>();
-    double RHO           = vm["rho"].as<double>();
-    double RHODERIVATIVE = vm["rhoderivative"].as<double>();
+    // double RHO           = vm["rho"].as<double>();
+    // double RHODERIVATIVE = vm["rhoderivative"].as<double>();
 
 
 	auto optimizer = OptimizerType::New();
@@ -357,52 +347,53 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 
 
 	registration->SetInitialTransformParameters( transform->GetParameters() );
-
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
-	const unsigned int numberOfSamplesMA =static_cast< unsigned int >( numberOfPixels * MAPERCENTAGE );
-    const unsigned int numberOfSamplesMSE  = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
-    const unsigned int numberOfSamplesNGF  = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
-    const unsigned int numberOfSamplesNMI  = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
-    const unsigned int numberOfSamplesHMI  = static_cast<unsigned int>(numberOfPixels * MIPERCENTAGE );
+	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
+
+
+	// const unsigned int numberOfSamplesGD =
+	// 	static_cast<unsigned int>(numberOfPixels * GDPERCENTAGE);
+
+	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
+	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
+	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+
+	metric->SetUseExplicitPDFDerivatives(EPDF);
+	metric->SetNumberOfThreads(NT);
+	metric->SetNormalizeDerivatives(NORMALIZE_DERIVATIVES);
 
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
-	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
-	metric->SetUseExplicitPDFDerivatives(EPDF);
-	metric->SetNu(NU);
-	metric->SetNuDerivative(NUDERIVATIVE);
-	metric->SetMSENumberOfSamples( numberOfSamplesMSE );
-	metric->SetLambda(LAMBDA);
-	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
-	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
-	metric->SetNormalizeDerivatives(ND);
-	metric->SetNumberOfThreads(NT);
-
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
-	metric->SetNMINumberOfSamples( numberOfSamplesNMI );
-
-	metric->SetRho( RHO );
-	metric->SetRhoDerivative( RHODERIVATIVE );
-	metric->SetHMINumberOfSamples( numberOfSamplesHMI );
-
-	
+	metric->SetBinNumbers(NB);
 	metric->SetFixedEta(ETAF);
 	metric->SetMovingEta(ETAM);
 	metric->SetEvaluator(NGFevaluator);
-	
+
+
+	metric->SetLambda(LAMBDA);
+	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
+	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
+	metric->SetNGFSpacing(ngf);
+
+	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
+	metric->SetNu(NU);
+	metric->SetNuDerivative(NUDERIVATIVE);
+
+
+	metric->SetYota(YOTA);
+	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetNCNumberOfSamples(numberOfSamplesNC);
+
+	// metric->SetRho(RHO);
+	// metric->SetRhoDerivative(RHODERIVATIVE);
+	// metric->SetGDNumberOfSamples(numberOfSamplesGD);
+
 	if (TR!=-99999999)
 	{
 		metric->SetUseFixedImageSamplesIntensityThreshold(TR);
 	}
 
-    // apply the parsed spacing
-    {
-        auto ngf = boost::any_cast<MovingImageType::SpacingType>(
-            vm["parsed_ngfspacing"].value());
-        metric->SetNGFSpacing(ngf);
-    }
 
 	if (TIN!="N")
 	{

@@ -77,7 +77,56 @@ int main(int argc, char *argv[])
 								 "Allowed options for alpha MI + lambda NGF +  nu MSE + yota NMI");
 	double YOTA = 0.0;
 	double YOTADERIVATIVE = 0.0;
-	desc.add_options()("help,h", "produce help message")("fixedimage,f", po::value<std::string>(), "Fixed image filename")("movingimage,m", po::value<std::string>(), "Moving image filename")("outputimage,o", po::value<std::string>(), "Output registered imagefilename")("vfout,v", po::value<std::string>()->default_value("N"), "VF output filename")("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")("alpha,a", po::value<double>()->default_value(1.0), "alpha value MI 1.0")("alphaderivative,A", po::value<double>()->default_value(1.0), "alpha derivative MI 1.0")("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")("lambda,l", po::value<double>()->default_value(0), "lambda value NGF 1.0")("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")("nu,n", po::value<double>()->default_value(0), "nu value MSE 1.0")("nuderivative,N", po::value<double>()->default_value(0), "nu MSE derivative 1.0")("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm)")("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")("numberofevaluations,E", po::value<int>()->default_value(500), "Number of Evaluations")("numberofcorrections,C", po::value<int>()->default_value(5), "Number of Corrections")("fixedimagethreshold,t", po::value<double>()->default_value(-99999999), "Fixed image threshold")("bound", po::value<int>()->default_value(0), "Set the boundary condition for each variable, where = 0 if x[i] is unbounded, 1 if x[i] has only a lower bound,2 if x[i] has both lower and upper bounds and 3 if x[1] has only an upper bound")("lbound", po::value<double>()->default_value(0), "Lower bound")("ubound", po::value<double>()->default_value(0), "Upper bound")("transformout,T", po::value<std::string>()->default_value("N"), "Output for transform")("transformin,W", po::value<std::string>()->default_value("N"), "Input no rigid transform for transform")("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")("verbose,V", po::value<bool>()->default_value(false), "verbose")("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives")("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")("nmipercentage", po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")("ngfspacing", po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")("mipercentage,p", po::value<double>()->default_value(0.1), "MI percentage of pixels used (0.1 = 10%)")("rho", po::value<double>()->default_value(0.0), "rho weight for histogram‐MI (HMI)")("rhoderivative", po::value<double>()->default_value(0.0), "rho derivative for histogram‐MI")("normalizederivatives", po::value<bool>()->default_value(false), "Normalize derivatives (default: false)");
+	desc.add_options()
+    ("help,h", "produce help message")
+    ("fixedimage,f", po::value<std::string>(), "Fixed image filename")
+    ("movingimage,m", po::value<std::string>(), "Moving image filename")
+    ("outputimage,o", po::value<std::string>(), "Output registered imagefilename")
+    ("vfout,v", po::value<std::string>()->default_value("N"), "VF output filename")
+    ("numberofthreads", po::value<int>()->default_value(2), "Number of threads 2")
+    ("alpha,a", po::value<double>()->default_value(1.0), "alpha value MI 1.0")
+    ("alphaderivative,A", po::value<double>()->default_value(1.0), "alpha derivative MI 1.0")
+    ("mattespercentage,p", po::value<double>()->default_value(0.1), "Mattes percentage 0.1")
+    ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
+    ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
+    ("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
+    ("lambda,l", po::value<double>()->default_value(0), "lambda value NGF 1.0")
+    ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")
+    ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
+    ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
+    ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
+    ("nu,n", po::value<double>()->default_value(0), "nu value MSE 1.0")
+    ("nuderivative,N", po::value<double>()->default_value(0), "nu MSE derivative 1.0")
+    ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm)")
+    ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
+    ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), 
+       "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
+    ("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), 
+       "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")
+    ("numberofevaluations,E", po::value<int>()->default_value(500), "Number of Evaluations")
+    ("numberofcorrections,C", po::value<int>()->default_value(5), "Number of Corrections")
+    ("fixedimagethreshold,t", po::value<double>()->default_value(-99999999), "Fixed image threshold")
+    ("bound", po::value<int>()->default_value(0), 
+       "Set the boundary condition for each variable, where = 0 if x[i] is unbounded, 1 if x[i] has only a lower bound,"
+       " 2 if x[i] has both lower and upper bounds and 3 if x[i] has only an upper bound")
+    ("lbound", po::value<double>()->default_value(0), "Lower bound")
+    ("ubound", po::value<double>()->default_value(0), "Upper bound")
+    ("transformout,T", po::value<std::string>()->default_value("N"), "Output for transform")
+    ("transformin,W", po::value<std::string>()->default_value("N"), "Input no rigid transform for transform")
+    ("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
+    ("dfltpixelvalue,P", po::value<double>()->default_value(0), "Default pixel value")
+    ("verbose,V", po::value<bool>()->default_value(false), "verbose")
+    ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value Normalize correlazion (NC) 0.1")
+    ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NC 0 no derivatives")
+    ("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
+    ("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+    ("ncpercentage", po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
+    ("chpercentage,p", po::value<double>()->default_value(0.1), "CH percentage of pixels used (0.1 = 10%)")
+    // ("rho", po::value<double>()->default_value(0.0), "rho weight for  (CH)")
+    // ("rhoderivative", po::value<double>()->default_value(0.0), "rho derivative for GD")
+    ("normalizederivatives", po::value<bool>()->default_value(false), "Normalize derivatives (default: false)")
+    ("ngfspacing", po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
+;
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -94,7 +143,6 @@ int main(int argc, char *argv[])
 	ImageType::SpacingType ngf;
 	for (unsigned i = 0; i < ImageDimension; ++i)
 		ngf[i] = tmp[i];
-	metric->SetNGFSpacing(ngf);
 
 	if (vm.count("help") || !vm.count("fixedimage") || !vm.count("movingimage") || !vm.count("outputimage") || !vm.count("vfout"))
 	{
@@ -178,8 +226,8 @@ int main(int argc, char *argv[])
 	double DFLTPIXELVALUE = vm["dfltpixelvalue"].as<double>();
 	bool V = vm["verbose"].as<bool>();
 	std::string GRIDPOSITION = vm["gridposition"].as<std::string>();
-	double RHO = vm["rho"].as<double>();
-	double RHODERIVATIVE = vm["rhoderivative"].as<double>();
+	// double RHO = vm["rho"].as<double>();
+	// double RHODERIVATIVE = vm["rhoderivative"].as<double>();
 	bool NORMALIZE_DERIVATIVES = vm["normalizederivatives"].as<bool>();
 
 	registration->SetMetric(metric);
@@ -300,43 +348,51 @@ int main(int argc, char *argv[])
 	registration->SetInitialTransformParameters(transform->GetParameters());
 
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
-	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
+
 
 	double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
 	double MSEPERCENTAGE = vm["msepercentage"].as<double>();
-	double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
-	double MIPERCENTAGE = vm["mipercentage"].as<double>();
-	const unsigned int numberOfSamplesMI =
-		static_cast<unsigned int>(numberOfPixels * MIPERCENTAGE);
-
+	double NCPERCENTAGE = vm["ncpercentage"].as<double>();
+	// double CHPERCENTAGE = vm["chpercentage"].as<double>();
+	
+	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
+	// const unsigned int numberOfSamplesCH =static_cast<unsigned int>(numberOfPixels * CHPERCENTAGE);
 	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
 	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
-	const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
+	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+
+	metric->SetUseCachingOfBSplineWeights(TB);
+	metric->SetUseExplicitPDFDerivatives(EPDF);
+	metric->SetNumberOfThreads(NT);
+	metric->SetNormalizeDerivatives(NORMALIZE_DERIVATIVES);
 
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
-	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
-	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
-	metric->SetUseCachingOfBSplineWeights(TB);
-	metric->SetUseExplicitPDFDerivatives(EPDF);
-	metric->SetNu(NU);
-	metric->SetNuDerivative(NUDERIVATIVE);
-	metric->SetLambda(LAMBDA);
-	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
-	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
-	metric->SetNumberOfThreads(NT);
-	metric->SetNGFSpacing(ngf); // ensure spacing is applied
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
-	metric->SetHMINumberOfSamples(numberOfSamplesMI);
-	metric->SetRho(RHO);
-	metric->SetRhoDerivative(RHODERIVATIVE);
-	metric->SetNormalizeDerivatives(NORMALIZE_DERIVATIVES);
-
+	metric->SetBinNumbers(NB);
 	metric->SetFixedEta(ETAF);
 	metric->SetMovingEta(ETAM);
 	metric->SetEvaluator(NGFevaluator);
+
+
+	metric->SetLambda(LAMBDA);
+	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
+	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
+	metric->SetNGFSpacing(ngf);
+
+	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
+	metric->SetNu(NU);
+	metric->SetNuDerivative(NUDERIVATIVE);
+
+
+	metric->SetYota(YOTA);
+	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetNCNumberOfSamples(numberOfSamplesNC);
+
+	// metric->SetRho(RHO);
+	// metric->SetRhoDerivative(RHODERIVATIVE);
+	// metric->SetCHNumberOfSamples(numberOfSamplesCH);
+
 
 	if (TR != -99999999)
 	{

@@ -20,7 +20,7 @@ For a detailed description of the method, please refer to our article:
 
 ## Features
 
-- **Multi-metric registration:** Combines MI, NGF, and MSE to optimize registration accuracy.
+- **Multi-metric registration:** Combines MI, NGF, and MSE, NC to optimize registration accuracy.
 - **Non-rigid 3D registration:** Efficiently handles deformations in brain images.
 - **Multithreading support:** Accelerates computation for large 3D datasets.
 - **Open source:** Freely available for research and development.
@@ -237,4 +237,3 @@ Cavatorta C, Meroni S, Montin E, et al. Retrospective study of late radiation-in
 
 ## Notes
 1. if you build your ITK4 you need set to true ITKV3_COMPATIBILITY and the shared libraries
-

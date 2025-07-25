@@ -10,8 +10,8 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkMeanSquaresImageToImageMetric.h"
 #include "itkMutualInformationHistogramImageToImageMetric.h"
+#include "itkNormalizedCorrelationImageToImageMetric.h"
 
-#include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
 namespace itk
 {
 template <class TFixedImage, class TMovingImage>
@@ -64,10 +64,10 @@ public:
 	itkGetMacro( NGFNumberOfSamples, unsigned int);
 	itkSetMacro( NGFNumberOfSamples, unsigned int);
 
-	itkSetMacro(NMINumberOfSamples, unsigned int);
-	itkGetMacro( NMINumberOfSamples, unsigned int);
-	itkSetMacro( HMINumberOfSamples, unsigned int);
-	itkGetMacro( HMINumberOfSamples, unsigned int);
+	// itkSetMacro(CHNumberOfSamples, unsigned int);
+	// itkGetMacro( CHNumberOfSamples, unsigned int);
+	itkSetMacro( NCNumberOfSamples, unsigned int);
+	itkGetMacro( NCNumberOfSamples, unsigned int);
 
 
 	itkGetMacro( FixedEta, double);
@@ -76,10 +76,9 @@ public:
 	itkGetMacro( MovingEta, double);
 	itkSetMacro( MovingEta, double);
 
-// <<< new: toggle auto-estimate η for NGF
-  itkGetMacro( AutoEstimateEta, bool );
-  itkSetMacro( AutoEstimateEta, bool );
-// >>>
+
+	itkGetMacro( AutoEstimateEta, bool );
+	itkSetMacro( AutoEstimateEta, bool );
 
 	itkGetMacro( NumberOfThreads, unsigned int);
 	itkSetMacro( NumberOfThreads, unsigned int);
@@ -107,11 +106,11 @@ public:
 	itkSetMacro( YotaDerivative, double);
 
 
-	itkGetMacro( Rho, double);
-	itkSetMacro( Rho, double);
+	// itkGetMacro( Rho, double);
+	// itkSetMacro( Rho, double);
 
-	itkGetMacro( RhoDerivative, double);
-	itkSetMacro( RhoDerivative, double);
+	// itkGetMacro( RhoDerivative, double);
+	// itkSetMacro( RhoDerivative, double);
 
 	
 	void SetNGFSpacing(const typename TFixedImage::SpacingType& spacing) { m_NGFSpacing = spacing; }
@@ -162,8 +161,9 @@ public:
 	MeasureType GetNGFValue(const ParametersType & parameters) const;
 	MeasureType GetMAValue(const ParametersType & parameters) const;
 	MeasureType GetMSEValue(const ParametersType & parameters) const;
-	MeasureType GetHMIValue(const ParametersType & parameters) const;        
-	MeasureType GetNMIValue(const ParametersType & parameters) const;
+	// MeasureType GetCHValue(const ParametersType & parameters) const;
+	MeasureType GetNCValue(const ParametersType & parameters) const;
+	
 
 	/** Get the derivatives of the match measure. */
 	void GetDerivative(const ParametersType & parameters,
@@ -174,10 +174,11 @@ public:
 			DerivativeType & Derivative) const;
 	void GetMSEDerivative(const ParametersType & parameters,
 			DerivativeType & Derivative) const;
-	void        GetHMIDerivative(const ParametersType & parameters, 
-                              DerivativeType & Derivative) const;       
-	void GetNMIDerivative(const ParametersType & parameters,
-			DerivativeType & Derivative) const;
+	// void GetCHDerivative(const ParametersType & parameters, DerivativeType & Derivative) const;
+	void GetNCDerivative(const ParametersType & parameters, DerivativeType & Derivative) const;
+			
+
+
 	void NormalizeDerivative(DerivativeType & Derivative) const;
 	/**  Get the value and derivatives for single valued optimizers. */
 	void GetValueAndDerivative(const ParametersType & parameters,MeasureType & Value,DerivativeType & Derivative) const;
@@ -223,16 +224,17 @@ if (maxVal != minVal)
 	unsigned int m_MANumberOfSamples;
 	unsigned int m_NGFNumberOfSamples;
 	unsigned int m_MSENumberOfSamples;
-	unsigned int m_HMINumberOfSamples;
-	unsigned int m_NMINumberOfSamples;
+	unsigned int m_NCNumberOfSamples;
+	// unsigned int m_CHNumberOfSamples;
+	// double m_Rho;
+	// double m_RhoDerivative;
 	double m_FixedEta;
 	double m_MovingEta;
 	double m_Lambda;
 	double m_LambdaDerivative;
 	double m_Yota;
 	double m_YotaDerivative;
-	double m_Rho;
-	double m_RhoDerivative;
+
 	unsigned int m_NumberOfThreads;
 	char m_Evaluator;
 	double m_Alpha;
@@ -253,9 +255,8 @@ protected:
 	typedef NormalizedGradientFieldImageToImageMetric<FixedImageType,MovingImageType> NGFType;
 	typedef LinearInterpolateImageFunction<FixedImageType,double > LFType;
 	typedef MeanSquaresImageToImageMetric<FixedImageType,MovingImageType> MSEType;
-	typedef MutualInformationHistogramImageToImageMetric<
-            FixedImageType,MovingImageType>                HMIType;
-	typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
+	// typedef CorrelationCoefficientHistogramImageToImageMetric<FixedImageType,MovingImageType>        CHType;
+	typedef NormalizedCorrelationImageToImageMetric<FixedImageType,MovingImageType>    NCType;
 
 
 
@@ -291,10 +292,11 @@ private:
 	typename MattesType::Pointer m_MA;
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
-	typename HMIType::Pointer m_HMI;                                         
-	typename NMIType::Pointer m_NMI;
+
+	// typename CHType::Pointer m_CH;
+	typename NCType::Pointer m_NC;
+
 	typename LFType::Pointer m_INTERNALL_interpolator;
-	
 	
 
 	typename TFixedImage::SpacingType m_NGFSpacing;

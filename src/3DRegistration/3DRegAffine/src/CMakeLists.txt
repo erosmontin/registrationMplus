@@ -20,8 +20,8 @@ if(Boost_FOUND)
     add_executable(3DRegAffine 3DRegAffine.cxx)
     target_link_libraries(3DRegAffine ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
 
-    add_executable(3DRegAffineMultiLevel 3DRegAffineMultiLevel.cxx)
-    target_link_libraries(3DRegAffineMultiLevel ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
+    # add_executable(3DRegAffineMultiLevel 3DRegAffineMultiLevel.cxx)
+    # target_link_libraries(3DRegAffineMultiLevel ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
     
     add_executable(3DRegSimilarity 3DRegSimilarity.cxx)
     target_link_libraries(3DRegSimilarity ${Boost_LIBRARIES}  ${ITK_LIBRARIES})

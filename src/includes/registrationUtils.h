@@ -1,18 +1,25 @@
 #include <itkImage.h>
 #include <itkCommand.h>
 #include <itkLBFGSBOptimizer.h>
+#include <chrono>    // << add this
+#include <iomanip>                       // << for std::setprecision
 
 #include <iostream>
 
 class LBFGSBOptimizeCommandIterationUpdate : public itk::Command
 {
 public:
+    using Clock = std::chrono::steady_clock;    // << add this alias
     typedef  LBFGSBOptimizeCommandIterationUpdate   Self;
     typedef  itk::Command             Superclass;
     typedef itk::SmartPointer<Self>   Pointer;
     itkNewMacro( Self );
 protected:
-    LBFGSBOptimizeCommandIterationUpdate() {};
+    LBFGSBOptimizeCommandIterationUpdate()
+        : m_StartTime( Clock::now() )              // << initialize start
+    {};
+private:
+    Clock::time_point m_StartTime;               // << store start
 public:
     typedef itk::LBFGSBOptimizer    OptimizerType;
     typedef   const OptimizerType * OptimizerPointer;
@@ -20,16 +27,25 @@ public:
     {
         Execute( (const itk::Object *)caller, event);
     }
-    void Execute(const itk::Object * object, const itk::EventObject & event)
+    void Execute(const itk::Object * object, const itk::EventObject & event) override
     {
         OptimizerPointer optimizer = static_cast< OptimizerPointer >( object );
         if( !(itk::IterationEvent().CheckEvent( &event )) )
         {
             return;
         }
-        std::cout << "\r"
-                  <<"Iter: "<< optimizer->GetCurrentIteration() << " Metric: "
-                  << optimizer->GetCachedValue()       << " Infinity Norm Proj Grad: "
+
+        // compute elapsed
+        auto now     = Clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_StartTime);
+        double secs  = elapsed.count() / 1000.0;
+
+        // print with elapsed time
+        std::cout << "\r[" << std::fixed << std::setprecision(2)
+                  << secs << std::defaultfloat << " s] Iter: "
+                  << optimizer->GetCurrentIteration()
+                  << "  Metric: " << optimizer->GetCachedValue()
+                  << "  Inf-norm proj-grad: "
                   << optimizer->GetInfinityNormOfProjectedGradient()
                   << std::flush;
     }
@@ -39,56 +55,62 @@ public:
 class RegularStepGradientDescentOptimizerCommandIterationUpdate : public itk::Command
 {
 public:
-    typedef  RegularStepGradientDescentOptimizerCommandIterationUpdate   Self;
-    typedef  itk::Command             Superclass;
-    typedef itk::SmartPointer<Self>   Pointer;
+    using Clock = std::chrono::steady_clock;    // << add this alias
+    typedef  RegularStepGradientDescentOptimizerCommandIterationUpdate Self;
+    typedef  itk::Command                                             Superclass;
+    typedef itk::SmartPointer<Self>                                   Pointer;
     itkNewMacro( Self );
 
-
-    bool m_ShowGradient;
     itkSetMacro(ShowGradient, bool);
     itkGetMacro(ShowGradient, bool);
 
-    
-
 protected:
-    RegularStepGradientDescentOptimizerCommandIterationUpdate(): m_ShowGradient((bool)0)  {};
+    RegularStepGradientDescentOptimizerCommandIterationUpdate()
+      : m_ShowGradient(false),
+        m_StartTime( Clock::now() )               // << initialize start clock
+    {};
+
+private:
+    bool                        m_ShowGradient;
+    Clock::time_point           m_StartTime;       // << store start time
+
 public:
     typedef itk::RegularStepGradientDescentOptimizer    OptimizerType;
-    typedef   const OptimizerType * OptimizerPointer;
-    void Execute(itk::Object *caller, const itk::EventObject & event)
+    typedef const OptimizerType *                       OptimizerPointer;
+
+    void Execute(itk::Object *caller, const itk::EventObject & event) override
     {
-        Execute( (const itk::Object *)caller, event);
+        this->Execute( static_cast<const itk::Object*>(caller), event );
     }
-    void Execute(const itk::Object * object, const itk::EventObject & event)
+
+    void Execute(const itk::Object * object, const itk::EventObject & event) override
     {
         OptimizerPointer optimizer = static_cast< OptimizerPointer >( object );
-        if( !(itk::IterationEvent().CheckEvent( &event )) )
+        if( ! itk::IterationEvent().CheckEvent( &event ) )
         {
             return;
         }
-        long int iteration = optimizer->GetCurrentIteration();
-        if (iteration == 0)
-        {
-            std::cout << "Iteration, Value, " << " ";
-            if (m_ShowGradient)
-              std::cout<<"Gradient, ";
-            std::cout << "GradientMagnitudeTolerance, ";
-            std::cout << "StepLength" << std::endl;
 
+        // compute elapsed
+        auto now     = Clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_StartTime);
+        double secs  = elapsed.count() / 1000.0;
 
-        }
-        std::cout << iteration << "   ";
-        std::cout << optimizer->GetValue() << "   ";
+        long iteration = optimizer->GetCurrentIteration();
+
+        // overwrite the same line
+        std::cout << "\r[" << std::fixed << std::setprecision(2)
+                  << secs << std::defaultfloat << " s] Iter: " << iteration
+                  << "  Value: " << optimizer->GetValue();
+
         if (m_ShowGradient)
-            std::cout << optimizer->GetGradient() << "   ";
+        {
+            std::cout << "  Grad: " << optimizer->GetGradient();
+        }
 
-        std::cout << optimizer->GetGradientMagnitudeTolerance() << "   ";
-    // std::cout << optimizer->GetCurrentPosition() << "   ";
-
-
-    std::cout << optimizer->GetCurrentStepLength() << std::endl;
-
+        std::cout << "  GradTol: " << optimizer->GetGradientMagnitudeTolerance()
+                  << "  Step: "    << optimizer->GetCurrentStepLength()
+                  << std::flush;
     }
 };
 

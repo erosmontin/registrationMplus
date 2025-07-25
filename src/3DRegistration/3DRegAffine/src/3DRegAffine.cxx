@@ -106,14 +106,10 @@ int main( int argc, char *argv[] )
         ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives")
         ("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
         ("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
-        ("nmipercentage",   po::value<double>()->default_value(0.1), "Normalized‐MI percentage of pixels used (0.1 = 10%)")
-        ("mipercentage",    po::value<double>()->default_value(0.1), "Histogram‐MI percentage of pixels used (0.1 = 10%)")
-        ("rho",             po::value<double>()->default_value(0.0), "rho weight for histogram‐MI (HMI)")
-        ("rhoderivative",   po::value<double>()->default_value(0.0), "rho derivative for histogram‐MI")
+        ("ncpercentage,p",  po::value<double>()->default_value(0.1), "Histogram‐Correlation (CH) percentage of pixels used (0.1 = 10%)")
+        // ("rho",             po::value<double>()->default_value(0.0), "rho weight for CH")
+        // ("rhoderivative",   po::value<double>()->default_value(0.0), "rho derivative for CH")
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
-		("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NMI 0.1")
-        ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NMI 0 no derivatives") 
-
  ;
 	
 
@@ -122,12 +118,27 @@ int main( int argc, char *argv[] )
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
+	bool NORMALIZE_DERIVATIVES = vm["normalizederivatives"].as<bool>();
 
 	if (vm.count("help") || !vm.count("fixedimage") || !vm.count("movingimage") || !vm.count("outputimage") || !vm.count("vfout")){
     std::cout << desc << "\n";
     return 1;
 	}
 
+
+	auto s = vm["ngfspacing"].as<std::string>();
+	std::replace(s.begin(), s.end(), ',', ' ');
+	std::istringstream iss(s);
+	std::vector<double> tmp((std::istream_iterator<double>(iss)),
+							std::istream_iterator<double>());
+	if (tmp.size() != ImageDimension)
+	{ /* error */
+	}
+	FixedImageType::SpacingType ngf;
+	for (unsigned i = 0; i < ImageDimension; ++i)
+		ngf[i] = tmp[i];
+		if (vm["verbose"].as<bool>())
+		{
 for(const auto& it : vm) {
 	std::cout << "Option: " << it.first.c_str() << "\nValue: ";
 	
@@ -150,6 +161,7 @@ for(const auto& it : vm) {
 	}
 	std::cout << "\n-------------------\n";
 }
+		}
 
     std::string fixedImageFN = vm["fixedimage"].as<std::string>();
     std::string movingImageFN = vm["movingimage"].as<std::string>();
@@ -189,9 +201,9 @@ for(const auto& it : vm) {
     double MSEPERCENTAGE   = vm["msepercentage"].as<double>();
     double NGFPERCENTAGE   = vm["ngfpercentage"].as<double>();
     double NMIPERCENTAGE   = vm["nmipercentage"].as<double>();
-    double MIPERCENTAGE    = vm["mipercentage"].as<double>();
-    double RHO             = vm["rho"].as<double>();
-    double RHODERIVATIVE   = vm["rhoderivative"].as<double>();
+    double NCPERCENTAGE   = vm["ncpercentage"].as<double>();
+    // double RHO             = vm["rho"].as<double>();
+    // double RHODERIVATIVE   = vm["rhoderivative"].as<double>();
 
     // parse ngfspacing → SpacingType
     {
@@ -357,34 +369,36 @@ if (method == "translation") {
 	const unsigned int numberOfSamplesMA  = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
     const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
     const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
-    const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
-    const unsigned int numberOfSamplesHMI = static_cast<unsigned int>(numberOfPixels * MIPERCENTAGE);
+    const unsigned int numberOfSamplesNC  = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+
+	metric->SetUseExplicitPDFDerivatives(EPDF);
+	metric->SetNumberOfThreads(NT);
+	metric->SetNormalizeDerivatives(NORMALIZE_DERIVATIVES);
 
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
-	metric->SetMSENumberOfSamples(numberOfSamplesMA);
-	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
-	metric->SetUseExplicitPDFDerivatives(EPDF);
-	metric->SetNu(NU);
-	metric->SetNuDerivative(NUDERIVATIVE);
-	metric->SetLambda(LAMBDA);
-	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
-	metric->SetNGFNumberOfSamples(numberOfSamplesMA);
-	metric->SetNormalizeDerivatives(ND);
-	metric->SetNumberOfThreads(NT);
-
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
-    metric->SetNMINumberOfSamples(numberOfSamplesNMI);
-    metric->SetRho(RHO);
-    metric->SetRhoDerivative(RHODERIVATIVE);
-    metric->SetHMINumberOfSamples(numberOfSamplesHMI);
-
-	
+	metric->SetBinNumbers(NB);
 	metric->SetFixedEta(ETAF);
 	metric->SetMovingEta(ETAM);
 	metric->SetEvaluator(NGFevaluator);
+
+
+	metric->SetLambda(LAMBDA);
+	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
+	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
+	metric->SetNGFSpacing(ngf);
+
+	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
+	metric->SetNu(NU);
+	metric->SetNuDerivative(NUDERIVATIVE);
+
+
+	metric->SetYota(YOTA);
+	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetNCNumberOfSamples(numberOfSamplesNC);
+
+
 
     // apply parsed NGF‐spacing
     {

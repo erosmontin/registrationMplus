@@ -23,16 +23,14 @@ namespace itk
 		m_MA = MattesType::New();
 		m_NGF = NGFType::New();
 		m_MSE = MSEType::New();
-		m_HMI = HMIType::New();
-		m_NMI = NMIType::New();
 		m_INTERNALL_interpolator = LFType::New();
 		m_Lambda = 0.0;
 		m_LambdaDerivative = m_Lambda;
 		m_NGFNumberOfSamples = 20000;
 		m_MANumberOfSamples = 20000;
 		m_MSENumberOfSamples = 20000;
-		m_HMINumberOfSamples = 20000;
-		m_NMINumberOfSamples = 20000;
+		// m_CHNumberOfSamples = 20000;
+		m_NCNumberOfSamples = 20000;
 		m_BinNumbers = 50;
 		m_NumberOfThreads = 1;
 		m_Evaluator = 0;
@@ -44,8 +42,8 @@ namespace itk
 		m_NuDerivative = 0.0;
 		m_Yota = 0.0;
 		m_YotaDerivative = 0.0;
-		m_Rho = 0.0;
-		m_RhoDerivative = 0.0;
+		// m_Rho = 0.0;
+		// m_RhoDerivative = 0.0;
 		m_UseCachingOfBSplineWeights = true;
 		m_UseExplicitPDFDerivatives = true;
 		m_NormalizeDerivatives = false;
@@ -110,46 +108,19 @@ namespace itk
 			m_MSE->ReinitializeSeed();
 			m_MSE->Initialize();
 		}
-		if ((this->m_Rho != 0.0) || (this->m_RhoDerivative != 0.0))
-		{
-			m_HMI->SetFixedImage(this->m_FixedImage);
-			m_HMI->SetMovingImage(this->m_MovingImage);
-			m_HMI->SetInterpolator(this->m_Interpolator);
-			m_HMI->SetTransform(this->m_Transform);
-			m_HMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
 
-			{
-				// fill a 2‑D histogram size (fixed×moving) with BinNumbers in each dimension
-				typename HMIType::HistogramSizeType histogramSize;
-				histogramSize.Fill(this->m_BinNumbers);
-				m_HMI->SetHistogramSize(histogramSize); // :contentReference[oaicite:0]{index=0}
-			}
-			m_HMI->SetNumberOfSpatialSamples(this->m_HMINumberOfSamples);
-			m_HMI->SetNumberOfThreads(this->m_NumberOfThreads);
-			m_HMI->UseAllPixelsOff();
-			m_HMI->ReinitializeSeed();
-			m_HMI->Initialize();
-		}
 		if (this->m_Yota != 0.0 || this->m_YotaDerivative != 0.0)
 		{
-			m_NMI->SetTransform(this->GetTransform());
-			m_NMI->SetInterpolator(this->m_Interpolator);
-			m_NMI->SetFixedImage(this->m_FixedImage);
-			m_NMI->SetMovingImage(this->m_MovingImage);
-			m_NMI->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
-
-			// histogram bins (v3 API)
-			{
-				typename NMIType::HistogramSizeType histSize;
-				histSize.Fill(this->m_BinNumbers);
-				m_NMI->SetHistogramSize(histSize);
-			}
-
-			m_NMI->SetNumberOfSpatialSamples(this->m_NMINumberOfSamples);
-			m_NMI->SetNumberOfThreads(this->m_NumberOfThreads);
-			m_NMI->UseAllPixelsOff();
-			m_NMI->ReinitializeSeed();
-			m_NMI->Initialize();
+			m_NC = NCType::New();
+			m_NC->SetFixedImage(this->GetFixedImage());
+			m_NC->SetMovingImage(this->GetMovingImage());
+			m_NC->SetTransform(this->GetTransform());
+			m_NC->SetInterpolator(this->GetInterpolator());
+			m_NC->SetFixedImageRegion(this->GetFixedImage()->GetRequestedRegion());
+			m_NC->SetNumberOfSpatialSamples(this->m_NCNumberOfSamples);
+			m_NC->SetNumberOfThreads(this->m_NumberOfThreads);
+			m_NC->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
+			m_NC->Initialize();
 
 		}
 		// add a resampling filter to the NGF metric
@@ -335,12 +306,12 @@ namespace itk
 			c = this->GetMSEValue(parameters);
 		d = 0.0;
 
-		if (this->m_Rho != 0.0)
-			d = this->GetHMIValue(parameters);
+		// if (this->m_Rho != 0.0)
+		// 	d = this->GetCHValue(parameters);
 
 		e = 0.0;
 		if (this->m_Yota != 0.0)
-			e = this->GetNMIValue(parameters);
+			e = this->GetNCValue(parameters);
 
 		// std::cout << "a: " << a << " b: " << b << " c: " << c << " d: " << d << std::endl;
 		return a + b + c + d + e;
@@ -367,18 +338,18 @@ namespace itk
 		return static_cast<MeasureType>(m_MSE->GetValue(parameters) * this->m_Nu);
 	}
 
+	// template <class TFixedImage, class TMovingImage>
+	// typename Mplus<TFixedImage, TMovingImage>::MeasureType
+	// Mplus<TFixedImage, TMovingImage>::GetCHValue(const ParametersType &parameters) const
+	// {
+	// 	return static_cast<MeasureType>(m_CH->GetValue(parameters) * this->m_Rho);
+	// }
 	template <class TFixedImage, class TMovingImage>
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
-	Mplus<TFixedImage, TMovingImage>::GetHMIValue(const ParametersType &parameters) const
-	{
-		return static_cast<MeasureType>(m_HMI->GetValue(parameters) * this->m_Yota);
-	}
-	template <class TFixedImage, class TMovingImage>
-	typename Mplus<TFixedImage, TMovingImage>::MeasureType
-	Mplus<TFixedImage, TMovingImage>::GetNMIValue(const ParametersType &parameters) const
+	Mplus<TFixedImage, TMovingImage>::GetNCValue(const ParametersType &parameters) const
 	{
 
-		return static_cast<MeasureType>(m_NMI->GetValue(parameters) * this->m_Yota);
+		return static_cast<MeasureType>(m_NC->GetValue(parameters) * this->m_Yota);
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -413,14 +384,14 @@ namespace itk
 
 		DerivativeType d;
 		d = parameters;
-		if (this->m_RhoDerivative != 0.0)
-			this->GetHMIDerivative(parameters, d);
-		else
+		// if (this->m_RhoDerivative != 0.0)
+		// 	this->GetCHDerivative(parameters, d);
+		// else
 			d.Fill(0.0);
 		DerivativeType e;
 		e = parameters;
 		if (this->m_YotaDerivative != 0.0)
-			this->GetNMIDerivative(parameters, e);
+			this->GetNCDerivative(parameters, e);
 		else
 			e.Fill(0.0);
 
@@ -429,7 +400,7 @@ namespace itk
 		for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
 		{
 			derivative[p] =
-				a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p] + this->m_RhoDerivative * d[p] + this->m_YotaDerivative * e[p];
+				a[p] * this->m_AlphaDerivative + this->m_LambdaDerivative * b[p] + this->m_NuDerivative * c[p] + this->m_YotaDerivative * e[p];
 			if (this->m_NormalizeDerivatives)
 			{
 				// normalize the derivative
@@ -487,19 +458,19 @@ namespace itk
 		
 	}
 
-	template <class TFixedImage, class TMovingImage>
-	void
-	Mplus<TFixedImage, TMovingImage>::GetHMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
-	{
-		m_HMI->GetDerivative(parameters, derivative);
-		this->NormalizeDerivative(derivative);
-	}
+	// template <class TFixedImage, class TMovingImage>
+	// void
+	// Mplus<TFixedImage, TMovingImage>::GetCHDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	// {
+	// 	m_CH->GetDerivative(parameters, derivative);
+	// 	this->NormalizeDerivative(derivative);
+	// }
 
 	template <class TFixedImage, class TMovingImage>
 	void
-	Mplus<TFixedImage, TMovingImage>::GetNMIDerivative(const ParametersType &parameters, DerivativeType &derivative) const
+	Mplus<TFixedImage, TMovingImage>::GetNCDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
-		m_NMI->GetDerivative(parameters, derivative);
+		m_NC->GetDerivative(parameters, derivative);
 
 		this->NormalizeDerivative(derivative);
 	}
