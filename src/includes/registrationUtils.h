@@ -27,9 +27,11 @@ public:
         {
             return;
         }
-        std::cout << optimizer->GetCurrentIteration() << "   ";
-        std::cout << optimizer->GetCachedValue() << "   ";
-        std::cout << optimizer->GetInfinityNormOfProjectedGradient() << std::endl;
+        std::cout << "\r"
+                  <<"Iter: "<< optimizer->GetCurrentIteration() << " Metric: "
+                  << optimizer->GetCachedValue()       << " Infinity Norm Proj Grad: "
+                  << optimizer->GetInfinityNormOfProjectedGradient()
+                  << std::flush;
     }
 };
 
