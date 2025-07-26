@@ -126,6 +126,7 @@ int main(int argc, char *argv[])
     // ("rhoderivative", po::value<double>()->default_value(0.0), "rho derivative for GD")
     ("normalizederivatives", po::value<bool>()->default_value(false), "Normalize derivatives (default: false)")
     ("ngfspacing", po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
+    ("meshmarginsize", po::value<double>()->default_value(0.0), "Margin (mm) to extend mesh domain")
 ;
 
 	po::variables_map vm;
@@ -229,6 +230,7 @@ int main(int argc, char *argv[])
 	// double RHO = vm["rho"].as<double>();
 	// double RHODERIVATIVE = vm["rhoderivative"].as<double>();
 	bool NORMALIZE_DERIVATIVES = vm["normalizederivatives"].as<bool>();
+	double meshMargin = vm["meshmarginsize"].as<double>();
 
 	registration->SetMetric(metric);
 	registration->SetOptimizer(optimizer);
@@ -305,23 +307,31 @@ int main(int argc, char *argv[])
 	}
 
 	unsigned int numberOfGridNodes = 0;
-	for (unsigned int i = 0; i < SpaceDimension; i++)
+	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
-		fixedOrigin[i] = meshorigin[i];
-		fixedPhysicalDimensions[i] = meshspacing[i] *
-									 static_cast<double>(
-										 meshsize[i] - 1);
-		numberOfGridNodes = static_cast<int>((fixedPhysicalDimensions[i] - fixedOrigin[i]) / GRIDRESOLUTION);
+		// expand origin backwards by margin
+		fixedOrigin[i] = meshorigin[i] - meshMargin;
+		// expand the physical size forward and backward
+		fixedPhysicalDimensions[i] =
+			meshspacing[i] * (meshsize[i] - 1) + 2.0 * meshMargin;
+
+		// now compute numberOfGridNodes using your GRIDRESOLUTION
+		numberOfGridNodes =
+			static_cast<int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
 		if (numberOfGridNodes <= SplineOrder)
 		{
-			std::cerr << "Error: numberOfGridNodes must be greater than 0" << std::endl;
+			std::cerr << "Error: numberOfGridNodes must be greater than SplineOrder\n";
 			return EXIT_FAILURE;
 		}
 
 		meshSize[i] = numberOfGridNodes - SplineOrder;
 		if (vm["verbose"].as<bool>())
 		{
-			std::cout << "Dimension " << i << ": numberOfGridNodes = " << numberOfGridNodes << ", meshSize = " << meshSize[i] << std::endl;
+			std::cout << "Dim " << i
+					  << " origin = " << fixedOrigin[i]
+					  << ", physSize = " << fixedPhysicalDimensions[i]
+					  << ", meshSize = " << meshSize[i]
+					  << std::endl;
 		}
 	}
 

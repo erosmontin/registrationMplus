@@ -77,13 +77,95 @@ namespace itk
 		Superclass::Initialize();
 
 
+
+			// 1) grab the fixed‐image region
+	auto fixedRegion = this->m_FixedImage->GetRequestedRegion();
+
+	// 2) compute all 8 corners of the moving image in physical space
+	auto movingLargest  = this->m_MovingImage->GetLargestPossibleRegion();
+	std::vector<typename FixedImageType::PointType> physPts;
+	physPts.reserve(8);
+	for (unsigned corner=0; corner<8; ++corner)
+	{
+	typename MovingImageType::IndexType idx;
+	// build the corner index: each bit of ‘corner’ chooses min/max
+	for (unsigned d=0; d<FixedImageType::ImageDimension; ++d)
+		idx[d] = ((corner>>d)&1)
+				? movingLargest.GetIndex()[d] + static_cast<long>(movingLargest.GetSize()[d]) - 1
+				: movingLargest.GetIndex()[d];
+	// to physical
+	typename MovingImageType::PointType p;
+	this->m_MovingImage->TransformIndexToPhysicalPoint(idx, p);
+	// through current transform to fixed‐space
+	physPts.push_back(this->m_Transform->TransformPoint(p));
+	}
+
+	// 3) convert those physical points into fixed‐image indices & find min/max
+	typename FixedImageType::IndexType minIdx, maxIdx;
+	for (unsigned d=0; d<FixedImageType::ImageDimension; ++d)
+	{
+	minIdx[d] = std::numeric_limits<long>::max();
+	maxIdx[d] = std::numeric_limits<long>::min();
+	}
+	for (auto &p : physPts)
+	{
+	typename FixedImageType::IndexType idx;
+	this->m_FixedImage->TransformPhysicalPointToIndex(p, idx);
+	for (unsigned d=0; d<FixedImageType::ImageDimension; ++d)
+	{
+		minIdx[d] = std::min(minIdx[d], idx[d]);
+		maxIdx[d] = std::max(maxIdx[d], idx[d]);
+	}
+	}
+
+	// 4) build the overlapping region & crop it against fixedRegion
+	typename FixedImageType::SizeType   ovSize;
+	typename FixedImageType::RegionType overlap;
+	for (unsigned d=0; d<FixedImageType::ImageDimension; ++d)
+	{
+	ovSize[d] = maxIdx[d] - minIdx[d] + 1;
+	overlap.SetIndex(d, minIdx[d]);
+	overlap.SetSize(d,  ovSize[d]);
+	}
+	overlap.Crop(fixedRegion);
+
+
+
+		// constexpr unsigned int pad = this->m_OverlapPadding; // new member, e.g. default = 2 voxels
+		constexpr unsigned int pad = 5; // default padding, can be adjusted as needed
+
+		// compute padded min/max in fixed‐index space
+		typename FixedImageType::IndexType paddedMin, paddedMax;
+		auto fixedIdx0 = fixedRegion.GetIndex();
+		auto fixedIdx1 = fixedRegion.GetIndex();
+		auto fixedSz  = fixedRegion.GetSize();
+		for (unsigned d = 0; d < FixedImageType::ImageDimension; ++d)
+		{
+		// clamp so we don’t go outside the fixed image
+		long low  = std::max(fixedIdx0[d],  minIdx[d] - static_cast<long>(pad));
+		long high = std::min(fixedIdx0[d] + static_cast<long>(fixedSz[d]) - 1,
+							maxIdx[d] + static_cast<long>(pad));
+		paddedMin[d] = low;
+		paddedMax[d] = high;
+		}
+
+		// build the new region
+		typename FixedImageType::SizeType paddedSize;
+		for (unsigned d = 0; d < FixedImageType::ImageDimension; ++d)
+		paddedSize[d] = paddedMax[d] - paddedMin[d] + 1;
+
+		overlap.SetIndex(paddedMin);
+		overlap.SetSize(paddedSize);
+
 		if ((this->m_Alpha!=0.0) || (this->m_AlphaDerivative!=0.0))
 		{
 		m_MA->SetFixedImage(this->m_FixedImage);
 		m_MA->SetMovingImage(this->m_MovingImage);
 		m_MA->SetInterpolator(this->m_Interpolator);
 		m_MA->SetTransform(this->m_Transform);
-		m_MA->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+		// m_MA->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+		m_MA->SetFixedImageRegion(overlap);
+		m_MA->UseAllPixelsOff(); // use all pixels is not implemented yet
 		m_MA->SetNumberOfHistogramBins(this->m_BinNumbers);
 		m_MA->SetNumberOfSpatialSamples(this->m_MANumberOfSamples);
 		m_MA->SetNumberOfThreads(this->m_NumberOfThreads);
@@ -100,7 +182,8 @@ namespace itk
 			m_MSE->SetMovingImage(this->m_MovingImage);
 			m_MSE->SetInterpolator(this->m_Interpolator);
 			m_MSE->SetTransform(this->m_Transform);
-			m_MSE->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+			// m_MSE->SetFixedImageRegion(this->m_FixedImage->GetRequestedRegion());
+			m_MSE->SetFixedImageRegion(overlap);
 			m_MSE->UseAllPixelsOff();
 			m_MSE->SetNumberOfThreads(this->m_NumberOfThreads);
 			m_MSE->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
@@ -116,7 +199,9 @@ namespace itk
 			m_NC->SetMovingImage(this->GetMovingImage());
 			m_NC->SetTransform(this->GetTransform());
 			m_NC->SetInterpolator(this->GetInterpolator());
-			m_NC->SetFixedImageRegion(this->GetFixedImage()->GetRequestedRegion());
+			// m_NC->SetFixedImageRegion(this->GetFixedImage()->GetRequestedRegion());
+			m_NC->SetFixedImageRegion(overlap);
+			m_NC->UseAllPixelsOff(); // use all pixels is not implemented yet
 			m_NC->SetNumberOfSpatialSamples(this->m_NCNumberOfSamples);
 			m_NC->SetNumberOfThreads(this->m_NumberOfThreads);
 			m_NC->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
@@ -212,7 +297,8 @@ namespace itk
 			RegionType inputRegion = this->m_NGF->GetFixedImage()->GetRequestedRegion();
 			m_NGF->SetFixedNoise(this->m_FixedEta); // this NGF noise can be considered the eta parameter
 			m_NGF->SetMovingNoise(this->m_MovingEta);
-			m_NGF->SetFixedImageRegion(inputRegion);
+			// m_NGF->SetFixedImageRegion(inputRegion);
+			m_NGF->SetFixedImageRegion(overlap);
 
 			switch (m_Evaluator)
 			{
