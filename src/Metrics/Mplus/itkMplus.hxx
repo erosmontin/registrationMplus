@@ -50,6 +50,7 @@ namespace itk
 		m_NGFSpacing.Fill(4.0);
 		m_AutoEstimateEta = false;
 		m_RangeDerivatives=0.0;
+		m_ComputeOverlap   = true;    // default: compute overlap
 
 	}
 	template <class TFixedImage, class TMovingImage>
@@ -80,7 +81,11 @@ namespace itk
 
 			// 1) grab the fixed‐image region
 	auto fixedRegion = this->m_FixedImage->GetRequestedRegion();
+ // 1) grab the fixed-image region
+	typename FixedImageType::RegionType overlap;
 
+ if ( this->m_ComputeOverlap )
+ {
 	// 2) compute all 8 corners of the moving image in physical space
 	auto movingLargest  = this->m_MovingImage->GetLargestPossibleRegion();
 	std::vector<typename FixedImageType::PointType> physPts;
@@ -156,6 +161,14 @@ namespace itk
 
 		overlap.SetIndex(paddedMin);
 		overlap.SetSize(paddedSize);
+
+
+	 }
+	 else
+	 {
+		 // if we do not compute the overlap, use the fixed image region
+		 overlap =fixedRegion;
+	 }
 
 		if ((this->m_Alpha!=0.0) || (this->m_AlphaDerivative!=0.0))
 		{

@@ -105,6 +105,9 @@ public:
 	itkGetMacro( YotaDerivative, double);
 	itkSetMacro( YotaDerivative, double);
 
+	itkGetMacro( ComputeOverlap, bool );
+	itkSetMacro( ComputeOverlap, bool );
+
 
 	// itkGetMacro( Rho, double);
 	// itkSetMacro( Rho, double);
@@ -245,6 +248,7 @@ if (maxVal != minVal)
 	bool m_UseExplicitPDFDerivatives;
 	bool m_NormalizeDerivatives;
 	bool   m_AutoEstimateEta;
+	bool m_ComputeOverlap;
 
 protected:
 

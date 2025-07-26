@@ -127,7 +127,9 @@ int main(int argc, char *argv[])
     ("normalizederivatives", po::value<bool>()->default_value(false), "Normalize derivatives (default: false)")
     ("ngfspacing", po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
     ("meshmarginsize", po::value<double>()->default_value(0.0), "Margin (mm) to extend mesh domain")
-;
+	("metriconoverlaplap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
+
+	;
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -229,6 +231,7 @@ int main(int argc, char *argv[])
 	std::string GRIDPOSITION = vm["gridposition"].as<std::string>();
 	// double RHO = vm["rho"].as<double>();
 	// double RHODERIVATIVE = vm["rhoderivative"].as<double>();
+	bool METRICOVERLAP = vm["metriconoverlaplap"].as<bool>();
 	bool NORMALIZE_DERIVATIVES = vm["normalizederivatives"].as<bool>();
 	double meshMargin = vm["meshmarginsize"].as<double>();
 
@@ -375,7 +378,7 @@ int main(int argc, char *argv[])
 	metric->SetUseExplicitPDFDerivatives(EPDF);
 	metric->SetNumberOfThreads(NT);
 	metric->SetNormalizeDerivatives(NORMALIZE_DERIVATIVES);
-
+	metric->SetComputeOverlap(METRICOVERLAP);
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);

@@ -113,14 +113,17 @@ int main( int argc, char *argv[] )
     	// ("rhoderivative", po::value<double>()->default_value(0.0), "rho derivative for GD")
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"),
                              "NGF spacing per dimension (x,y,z)")
+							 ("metriconoverlaplap", po::value<bool>()->default_value(false), "Compute overlap between fixed and moving image (default false)")
  ;
 	
+
 
 
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
+	bool METRICOVERLAP = vm["metriconoverlaplap"].as<bool>();
 	bool NORMALIZE_DERIVATIVES = vm["normalizederivatives"].as<bool>();
 
 	if (vm.count("help") || !vm.count("fixedimage") || !vm.count("movingimage") || !vm.count("outputimage") || !vm.count("vfout")){
@@ -358,6 +361,7 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
 	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
 
+	metric->SetComputeOverlap(METRICOVERLAP);
 	metric->SetUseExplicitPDFDerivatives(EPDF);
 	metric->SetNumberOfThreads(NT);
 	metric->SetNormalizeDerivatives(NORMALIZE_DERIVATIVES);
