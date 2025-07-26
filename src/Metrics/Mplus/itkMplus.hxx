@@ -125,7 +125,6 @@ namespace itk
 
 	// 4) build the overlapping region & crop it against fixedRegion
 	typename FixedImageType::SizeType   ovSize;
-	typename FixedImageType::RegionType overlap;
 	for (unsigned d=0; d<FixedImageType::ImageDimension; ++d)
 	{
 	ovSize[d] = maxIdx[d] - minIdx[d] + 1;
