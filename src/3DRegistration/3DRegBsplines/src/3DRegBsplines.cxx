@@ -312,30 +312,37 @@ int main(int argc, char *argv[])
 	unsigned int numberOfGridNodes = 0;
 	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
-		// expand origin backwards by margin
-		fixedOrigin[i] = meshorigin[i] - meshMargin;
-		// expand the physical size forward and backward
-		fixedPhysicalDimensions[i] =
-			meshspacing[i] * (meshsize[i] - 1) + 2.0 * meshMargin;
+				// correlate the number of extra nodes to the spline order:
+				constexpr unsigned int borderNodesPerSide = SplineOrder;
+			const double extension = borderNodesPerSide * GRIDRESOLUTION;
 
-		// now compute numberOfGridNodes using your GRIDRESOLUTION
-		numberOfGridNodes =
-			static_cast<int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
-		if (numberOfGridNodes <= SplineOrder)
-		{
-			std::cerr << "Error: numberOfGridNodes must be greater than SplineOrder\n";
-			return EXIT_FAILURE;
-		}
+			// 1) shift the origin back by “extension”
+			fixedOrigin[i] = meshorigin[i] - meshMargin - extension;
 
-		meshSize[i] = numberOfGridNodes - SplineOrder;
-		if (vm["verbose"].as<bool>())
-		{
-			std::cout << "Dim " << i
-					  << " origin = " << fixedOrigin[i]
-					  << ", physSize = " << fixedPhysicalDimensions[i]
-					  << ", meshSize = " << meshSize[i]
-					  << std::endl;
-		}
+			// 2) grow the physical size by 2*extension
+			fixedPhysicalDimensions[i] =
+				meshspacing[i] * (meshsize[i] - 1)
+				+ 2.0 * meshMargin
+				+ 2.0 * extension;
+
+			// 3) now recompute how many grid‐nodes you need
+			const unsigned int totalGridNodes =
+				static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
+
+			// 4) subtract the spline order to get the final meshSize
+			meshSize[i] = totalGridNodes > SplineOrder
+						? totalGridNodes - SplineOrder
+						: 1;  // guard against too small
+
+			if (vm["verbose"].as<bool>())
+			{
+				std::cout
+				<< "Dim " << i
+				<< " origin = " << fixedOrigin[i]
+				<< ", physSize = " << fixedPhysicalDimensions[i]
+				<< ", meshSize = " << meshSize[i]
+				<< std::endl;
+			}
 	}
 
 	transform->SetTransformDomainOrigin(fixedOrigin);

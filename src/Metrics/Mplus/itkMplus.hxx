@@ -136,7 +136,7 @@ namespace itk
 
 
 		// constexpr unsigned int pad = this->m_OverlapPadding; // new member, e.g. default = 2 voxels
-		constexpr unsigned int pad = 5; // default padding, can be adjusted as needed
+		constexpr unsigned int pad = 20; // default padding, can be adjusted as needed
 
 		// compute padded min/max in fixed‐index space
 		typename FixedImageType::IndexType paddedMin, paddedMax;
