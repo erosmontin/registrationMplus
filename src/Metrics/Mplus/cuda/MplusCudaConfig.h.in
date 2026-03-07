@@ -1,0 +1,9 @@
+/*  Auto-generated configuration header.
+ *  Do NOT edit — modify MplusCudaConfig.h.in instead.
+ */
+#ifndef MPLUS_CUDA_CONFIG_H
+#define MPLUS_CUDA_CONFIG_H
+
+#cmakedefine USE_CUDA
+
+#endif /* MPLUS_CUDA_CONFIG_H */

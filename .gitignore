@@ -4,3 +4,17 @@ build/
 build2/
 old/
 .vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+*.egg
+dist/
+*.so
+.pytest_cache/
+htmlcov/
+coverage.xml
+.mypy_cache/
+build-v2/
+build-cuda/

@@ -21,8 +21,14 @@
 #include "itkRescaleIntensityImageFilter.h"
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
+#include "itkImageRegionIterator.h"
 #include <set>
 // >>>
+
+#ifdef USE_CUDA
+#  include "cuda/DistanceTransform.cuh"
+#  include "cuda/DerivativeOps.cuh"
+#endif
 
 namespace itk
 {
@@ -684,33 +690,15 @@ namespace itk
 		if (this->m_DerivativeMode == 1)
 		{
 			// ── Mode 1: normalize → merge → rescale (RSGD only) ─────────────
+			const size_t nP = a.GetSize();
+
 			double normA = this->ComputeDerivativeNorm(a);
-			if (normA > kMinNorm)
-				for (unsigned int i = 0; i < a.size(); ++i) a[i] /= normA;
-
 			double normB = this->ComputeDerivativeNorm(b);
-			if (normB > kMinNorm)
-				for (unsigned int i = 0; i < b.size(); ++i) b[i] /= normB;
-
 			double normC = this->ComputeDerivativeNorm(c);
-			if (normC > kMinNorm)
-				for (unsigned int i = 0; i < c.size(); ++i) c[i] /= normC;
-
 			double normD = this->ComputeDerivativeNorm(d);
-			if (normD > kMinNorm)
-				for (unsigned int i = 0; i < d.size(); ++i) d[i] /= normD;
-
 			double normE = this->ComputeDerivativeNorm(e);
-			if (normE > kMinNorm)
-				for (unsigned int i = 0; i < e.size(); ++i) e[i] /= normE;
-
 			double normF = this->ComputeDerivativeNorm(f);
-			if (normF > kMinNorm)
-				for (unsigned int i = 0; i < f.size(); ++i) f[i] /= normF;
-
 			double normG = this->ComputeDerivativeNorm(g);
-			if (normG > kMinNorm)
-				for (unsigned int i = 0; i < g.size(); ++i) g[i] /= normG;
 
 			const double wA = std::abs(this->m_AlphaDerivative);
 			const double wB = std::abs(this->m_LambdaDerivative);
@@ -720,27 +708,67 @@ namespace itk
 			const double wF = std::abs(this->m_LabelKappaDerivative);
 			const double wG = std::abs(this->m_SigmaDerivative);
 
+#ifdef USE_CUDA
+			// GPU normalize each non-zero component in-place
+			auto gpuNorm = [&](DerivativeType& v, double norm) {
+				if (norm > kMinNorm)
+					mplus::cuda::gpu_normalize_derivative(v.data_block(), nP);
+			};
+			gpuNorm(a, normA); gpuNorm(b, normB); gpuNorm(c, normC);
+			gpuNorm(d, normD); gpuNorm(e, normE); gpuNorm(f, normF);
+			gpuNorm(g, normG);
+
+			// GPU weighted combine
+			const double* ptrs[7] = { a.data_block(), b.data_block(),
+			                          c.data_block(), d.data_block(),
+			                          e.data_block(), f.data_block(),
+			                          g.data_block() };
+			const double wts[7]   = { wA, wB, wC, wD, wE, wF, wG };
+			derivative.SetSize(nP);
+			mplus::cuda::gpu_combine_derivatives(ptrs, wts, 7, nP,
+			                                     derivative.data_block());
+
+			// Rescale to weighted average of original norms
+			const double wSum = wA + wB + wC + wD + wE + wF + wG;
+			if (wSum > kMinNorm)
+			{
+				const double avgNorm = (wA * normA + wB * normB + wC * normC
+				                      + wD * normD + wE * normE + wF * normF
+				                      + wG * normG) / wSum;
+				const double mergedNorm = this->ComputeDerivativeNorm(derivative);
+				if (mergedNorm > kMinNorm)
+				{
+					const double scale = avgNorm / mergedNorm;
+#pragma omp parallel for
+					for (long unsigned int p = 0; p < nP; ++p)
+						derivative[p] *= scale;
+				}
+			}
+#else
+			// CPU normalize
+			if (normA > kMinNorm) for (size_t i=0;i<nP;++i) a[i] /= normA;
+			if (normB > kMinNorm) for (size_t i=0;i<nP;++i) b[i] /= normB;
+			if (normC > kMinNorm) for (size_t i=0;i<nP;++i) c[i] /= normC;
+			if (normD > kMinNorm) for (size_t i=0;i<nP;++i) d[i] /= normD;
+			if (normE > kMinNorm) for (size_t i=0;i<nP;++i) e[i] /= normE;
+			if (normF > kMinNorm) for (size_t i=0;i<nP;++i) f[i] /= normF;
+			if (normG > kMinNorm) for (size_t i=0;i<nP;++i) g[i] /= normG;
+
 			derivative = a;
 #pragma omp parallel for
 			for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
 			{
 				derivative[p] =
-					  wA * a[p]
-					+ wB * b[p]
-					+ wC * c[p]
-					+ wD * d[p]
-					+ wE * e[p]
-					+ wF * f[p]
-					+ wG * g[p];
+					  wA * a[p] + wB * b[p] + wC * c[p] + wD * d[p]
+					+ wE * e[p] + wF * f[p] + wG * g[p];
 			}
 
-			// rescale to weighted average of original norms
 			const double wSum = wA + wB + wC + wD + wE + wF + wG;
 			if (wSum > kMinNorm)
 			{
 				const double avgNorm = (wA * normA + wB * normB + wC * normC
-				                        + wD * normD + wE * normE + wF * normF
-				                        + wG * normG) / wSum;
+				                      + wD * normD + wE * normE + wF * normF
+				                      + wG * normG) / wSum;
 				const double mergedNorm = this->ComputeDerivativeNorm(derivative);
 				if (mergedNorm > kMinNorm)
 				{
@@ -750,6 +778,7 @@ namespace itk
 						derivative[p] *= scale;
 				}
 			}
+#endif
 		}
 		else if (this->m_DerivativeMode == 2)
 		{
@@ -809,9 +838,28 @@ namespace itk
 				this->m_ScaleNMI = 1.0;
 			}
 
+			const size_t nP = a.GetSize();
+			derivative.SetSize(nP);
+#ifdef USE_CUDA
+			const double* ptrs_m2[7] = { a.data_block(), b.data_block(),
+			                             c.data_block(), d.data_block(),
+			                             e.data_block(), f.data_block(),
+			                             g.data_block() };
+			const double wts_m2[7] = {
+				this->m_AlphaDerivative      * this->m_ScaleMA,
+				this->m_LambdaDerivative     * this->m_ScaleNGF,
+				this->m_NuDerivative         * this->m_ScaleMSE,
+				this->m_RhoDerivative        * this->m_ScaleGD,
+				this->m_YotaDerivative       * this->m_ScaleNC,
+				this->m_LabelKappaDerivative * this->m_ScaleLabel,
+				this->m_SigmaDerivative      * this->m_ScaleNMI
+			};
+			mplus::cuda::gpu_combine_derivatives(ptrs_m2, wts_m2, 7, nP,
+			                                     derivative.data_block());
+#else
 			derivative = a;
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
+			for (long unsigned int p = 0; p < nP; ++p)
 			{
 				derivative[p] =
 					  this->m_AlphaDerivative      * this->m_ScaleMA    * a[p]
@@ -822,16 +870,33 @@ namespace itk
 					+ this->m_LabelKappaDerivative * this->m_ScaleLabel * f[p]
 					+ this->m_SigmaDerivative      * this->m_ScaleNMI   * g[p];
 			}
+#endif
 		}
 		else
 		{
 			// ── Mode 0: consistent weighted sum (LBFGS-B, default) ──────────
-			// Uses the *derivative* weights, matching GetValue()'s convention:
-			//   V = α·V_MI + λ·V_NGF + ν·V_MSE + ρ·V_GD + γ·V_NC + κ·V_Label + σ·V_NMI
-			//   ∇V = α·∇V_MI + λ·∇V_NGF + ν·∇V_MSE + ρ·∇V_GD + γ·∇V_NC + κ·∇V_Label + σ·∇V_NMI
+			const size_t nP = a.GetSize();
+			derivative.SetSize(nP);
+#ifdef USE_CUDA
+			const double* ptrs_m0[7] = { a.data_block(), b.data_block(),
+			                             c.data_block(), d.data_block(),
+			                             e.data_block(), f.data_block(),
+			                             g.data_block() };
+			const double wts_m0[7] = {
+				this->m_AlphaDerivative,
+				this->m_LambdaDerivative,
+				this->m_NuDerivative,
+				this->m_RhoDerivative,
+				this->m_YotaDerivative,
+				this->m_LabelKappaDerivative,
+				this->m_SigmaDerivative
+			};
+			mplus::cuda::gpu_combine_derivatives(ptrs_m0, wts_m0, 7, nP,
+			                                     derivative.data_block());
+#else
 			derivative = a;
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
+			for (long unsigned int p = 0; p < nP; ++p)
 			{
 				derivative[p] =
 					  this->m_AlphaDerivative      * a[p]
@@ -842,6 +907,7 @@ namespace itk
 					+ this->m_LabelKappaDerivative * f[p]
 					+ this->m_SigmaDerivative      * g[p];
 			}
+#endif
 		}
 	}
 
@@ -1189,6 +1255,54 @@ namespace itk
 	Mplus<TFixedImage, TMovingImage>::ComputeSignedDist(
 	    const typename TFixedImage::Pointer & binaryImage) const
 	{
+#ifdef USE_CUDA
+	    // ── GPU Felzenszwalb signed distance transform ────────────────────
+	    const auto & region  = binaryImage->GetLargestPossibleRegion();
+	    const auto & sz      = region.GetSize();
+	    const auto & spacing = binaryImage->GetSpacing();
+
+	    const int sX = static_cast<int>(sz[0]);
+	    const int sY = static_cast<int>(sz[1]);
+	    const int sZ = (TFixedImage::ImageDimension >= 3)
+	                   ? static_cast<int>(sz[2]) : 1;
+
+	    const size_t nVox = (size_t)sX * sY * sZ;
+
+	    // Pack binary image into a contiguous float array
+	    std::vector<float> h_binary(nVox);
+	    {
+	        itk::ImageRegionConstIterator<TFixedImage> it(
+	            binaryImage, region);
+	        size_t idx = 0;
+	        for (it.GoToBegin(); !it.IsAtEnd(); ++it, ++idx)
+	            h_binary[idx] = static_cast<float>(it.Get());
+	    }
+
+	    std::vector<float> h_dist(nVox, 0.0f);
+	    mplus::cuda::gpu_signed_distance_transform(
+	        h_binary.data(), h_dist.data(),
+	        sX, sY, sZ,
+	        static_cast<float>(spacing[0]),
+	        static_cast<float>(spacing[1]),
+	        (TFixedImage::ImageDimension >= 3)
+	            ? static_cast<float>(spacing[2]) : 1.0f);
+
+	    // Build ITK image from the result
+	    typename TFixedImage::Pointer out = TFixedImage::New();
+	    out->SetRegions(region);
+	    out->SetSpacing(binaryImage->GetSpacing());
+	    out->SetOrigin(binaryImage->GetOrigin());
+	    out->SetDirection(binaryImage->GetDirection());
+	    out->Allocate();
+	    {
+	        itk::ImageRegionIterator<TFixedImage> it(out, region);
+	        size_t idx = 0;
+	        for (it.GoToBegin(); !it.IsAtEnd(); ++it, ++idx)
+	            it.Set(static_cast<typename TFixedImage::PixelType>(h_dist[idx]));
+	    }
+	    return out;
+#else
+	    // ── CPU fallback: ITK SignedMaurerDistanceMapImageFilter ──────────
 	    using UCImage     = itk::Image<unsigned char, TFixedImage::ImageDimension>;
 	    using CastToUC    = itk::CastImageFilter<TFixedImage, UCImage>;
 	    using DistFilter  = itk::SignedMaurerDistanceMapImageFilter<UCImage, TFixedImage>;
@@ -1206,6 +1320,7 @@ namespace itk
 	    typename TFixedImage::Pointer out = dist->GetOutput();
 	    out->DisconnectPipeline();
 	    return out;
+#endif
 	}
 
 	template <class TFixedImage, class TMovingImage>

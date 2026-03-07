@@ -1,3 +1,26 @@
+# mPlus v2 Roadmap
+
+## Status Update
+
+This section tracks what has been implemented so far and the recommended next steps.
+
+### Implemented
+
+- Modernised CMake across the repo (`cmake_minimum_required(VERSION 3.18)`, `CXX_STANDARD 17`), added `USE_CUDA`, `BUILD_PYTHON`, `BUILD_TESTS` options.
+- Added `src/Metrics/Mplus/itkMplusCompat.h` to handle ITK 4.x / 5.x API differences.
+- Added CUDA directory `src/Metrics/Mplus/cuda/` with initial kernel implementations and utilities (DerivativeOps, LabelMetric kernels, DistanceTransform scaffolding, DeviceMemoryPool). Some kernels (derivative ops and Dice forward pass) implemented; others need completion.
+- Created Python package scaffold under `python/` with high-level `mplus.registration` API, tests, and a `python/scripts/chain_registration.py` helper for staged pipelines.
+- CI workflows and a Dockerfile updated to support v2 packaging; Sphinx docs scaffold added.
+
+### Next steps (short-term priorities)
+
+1. Complete `DistanceTransform` CUDA kernel (finish 1-D passes) and add unit tests verifying numerical equivalence with CPU path.
+2. Implement kappa-derivative CUDA kernel and finalise derivative assembly on GPU.
+3. Wire CUDA runtime calls into `src/Metrics/Mplus/itkMplus.hxx` behind `#ifdef USE_CUDA` guards so the metric hot-paths can use GPU implementations when available.
+4. Complete pybind11 native bindings (`mplus/_core.cpp`) to expose the full pipeline to Python and add packaging steps to produce wheels for common platforms.
+5. Add GPU benchmark suite and integrate GPU tests into CI (requires a GPU-enabled runner or cloud GPUs).
+
+If you want I can start on any of these items — say which one to prioritise and I'll implement it next.
 # Mplus v2 Modernization Roadmap
 
 This roadmap outlines the modernization of the Mplus registration metric library with three major initiatives:

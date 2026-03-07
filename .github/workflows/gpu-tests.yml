@@ -1,0 +1,45 @@
+name: GPU Tests
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  gpu-tests:
+    runs-on: [self-hosted, gpu]
+    container:
+      image: nvidia/cuda:11.8.0-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            cmake build-essential python3-pip \
+            libinsighttoolkit5-dev \
+            libboost-program-options-dev \
+            libpng-dev libjpeg-dev libtiff-dev
+
+      - name: Build C++ with CUDA
+        run: |
+          mkdir -p build && cd build
+          cmake ../src \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_CUDA=ON \
+            -DCMAKE_CUDA_ARCHITECTURES="60;70;75;80;86;89;90"
+          cmake --build . -j$(nproc)
+
+      - name: Install Python package
+        working-directory: python
+        run: |
+          pip3 install -e ".[dev]"
+
+      - name: Run GPU tests
+        working-directory: python
+        run: pytest tests/test_cuda.py -v -m gpu
+
+      - name: Run benchmark suite
+        working-directory: python
+        run: pytest tests/test_cuda.py -v -k "speedup" -s

@@ -1,29 +1,31 @@
-# This is the root ITK CMakeLists file.
-cmake_minimum_required(VERSION 2.4)
-if(COMMAND CMAKE_POLICY)
-  cmake_policy(SET CMP0003 NEW)
-endif()
-
-
-# This project is designed to be built outside the Insight source tree.
-project(PRJ_3DRegAffine)
-
-# Find ITK.
-find_package(ITK REQUIRED)
-include(${ITK_USE_FILE})
-
+# ── 3DRegAffine executables ────────────────────────────────────────────────
 
 find_package(Boost REQUIRED COMPONENTS program_options)
 
-if(Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-    add_executable(3DRegAffine 3DRegAffine.cxx)
-    target_link_libraries(3DRegAffine ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
+set(_COMMON_INCLUDES
+  ${Boost_INCLUDE_DIRS}
+  ${CMAKE_SOURCE_DIR}/includes
+  ${CMAKE_SOURCE_DIR}/Metrics/Mplus
+)
+set(_COMMON_LIBS
+  ${Boost_LIBRARIES}
+  ${ITK_LIBRARIES}
+)
 
-    add_executable(3DRegAffineMultiLevel 3DRegAffineMultiLevel.cxx)
-    target_link_libraries(3DRegAffineMultiLevel ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
-    
-    add_executable(3DRegSimilarity 3DRegSimilarity.cxx)
-    target_link_libraries(3DRegSimilarity ${Boost_LIBRARIES}  ${ITK_LIBRARIES})
+add_executable(3DRegAffine 3DRegAffine.cxx)
+target_include_directories(3DRegAffine PRIVATE ${_COMMON_INCLUDES})
+target_link_libraries(3DRegAffine PRIVATE ${_COMMON_LIBS})
 
+add_executable(3DRegAffineMultiLevel 3DRegAffineMultiLevel.cxx)
+target_include_directories(3DRegAffineMultiLevel PRIVATE ${_COMMON_INCLUDES})
+target_link_libraries(3DRegAffineMultiLevel PRIVATE ${_COMMON_LIBS})
+
+add_executable(3DRegSimilarity 3DRegSimilarity.cxx)
+target_include_directories(3DRegSimilarity PRIVATE ${_COMMON_INCLUDES})
+target_link_libraries(3DRegSimilarity PRIVATE ${_COMMON_LIBS})
+
+if(USE_CUDA)
+  target_link_libraries(3DRegAffine PRIVATE mplus_cuda)
+  target_link_libraries(3DRegAffineMultiLevel PRIVATE mplus_cuda)
+  target_link_libraries(3DRegSimilarity PRIVATE mplus_cuda)
 endif()

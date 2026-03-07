@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# NOTE: For C++ extension builds, switch build-backend to scikit-build-core:
+#   requires = ["scikit-build-core[pyproject]>=0.5", "pybind11>=2.11"]
+#   build-backend = "scikit_build_core.build"
+
+[project]
+name = "mplus-registration"
+version = "2.0.0"
+description = "Multi-metric B-spline image registration with optional CUDA support"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Registration Suite Contributors" }]
+keywords = ["registration", "medical-imaging", "itk", "deformable", "cuda"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+dependencies = [
+    "numpy>=1.21",
+]
+
+[project.optional-dependencies]
+itk = ["itk>=5.2"]
+visualization = ["matplotlib>=3.5"]
+cli = ["SimpleITK>=2.2"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "matplotlib>=3.5",
+    "SimpleITK>=2.2",
+]
+docs = [
+    "sphinx>=5.0",
+    "sphinx-rtd-theme>=1.0",
+    "nbsphinx>=0.9",
+]
+all = [
+    "mplus-registration[itk,visualization,cli,dev,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourorg/registrationSuite"
+Documentation = "https://yourorg.github.io/registrationSuite"
+Repository = "https://github.com/yourorg/registrationSuite"
+Issues = "https://github.com/yourorg/registrationSuite/issues"
+
+[tool.scikit-build]
+cmake.args = ["-DBUILD_PYTHON=ON"]
+cmake.source-dir = "../src"
+cmake.version = ">=3.18"
+wheel.packages = ["mplus"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gpu: marks tests requiring a CUDA-capable GPU",
+    "slow: marks tests that take a long time",
+]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["mplus"]
+omit = ["*/tests/*", "*/_core*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80

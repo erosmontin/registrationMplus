@@ -1,9 +1,10 @@
-# Image Registration Based on mPlus (v1.2)
+# Image Registration Based on mPlus (v2.0-rc)
 ![GitHub last commit](https://img.shields.io/github/last-commit/erosmontin/registrationMplus)
 ![GitHub issues](https://img.shields.io/github/issues/erosmontin/registrationMplus)
-
 ![GitHub forks](https://img.shields.io/github/forks/erosmontin/registrationMplus)
 ![GitHub stars](https://img.shields.io/github/stars/erosmontin/registrationMplus)
+
+> **v2.0 Release Candidate** — see [What's New in v2](#whats-new-in-v2) for the full change list.
 
 
 This project implements a multi-metric registration strategy that combines Mutual Information (MI), Normalized Gradient Field (NGF), Mean Squared Error (MSE), and Normalized Correlation (NC) techniques. Developed using the Insight Segmentation and Registration Toolkit (ITK), this method is specifically designed for applications in pediatric oncology.
@@ -38,29 +39,123 @@ For a detailed description of the method, please refer to our article:
 - **Version flag:** All executables accept `--version` to print the version string and exit.
 - **Open source:** Freely available for research and development.
 
+## What's New in v2
+
+### Phase 1 — Build System & C++17
+- **CMake 3.18+** required (was 2.4/2.8); fully modernised `CMakeLists.txt` throughout.
+- **C++17** standard enforced (`CXX_STANDARD 17`); removed `-std=c++14` hard-coding.
+- **ITK 5.x supported** via `-DITK_DIR=/path/to/ITK-5.x`. ITK 4.x still works (default on this machine at `/usr/local/lib/cmake/ITK-4.13`). The new `src/Metrics/Mplus/itkMplusCompat.h` header provides shims for API differences (`BSplineTransformCompat<>`, `ThreaderType`, `MPLUS_TYPE_MACRO`, `MPLUS_SMART_POINTER_ALIASES`) so the same source compiles against both.
+- **OpenMP** detected automatically via `find_package(OpenMP)` instead of hardcoded flags.
+- New CMake options:
+  - `-DUSE_CUDA=ON` — enable GPU acceleration (requires CUDA toolkit)
+  - `-DBUILD_PYTHON=ON` — build pybind11 Python extension
+  - `-DBUILD_TESTS=ON` — build test executables
+
+### Phase 2 — CUDA Acceleration (structure ready, kernels in progress)
+New directory `src/Metrics/Mplus/cuda/` with pure-C++ interfaces (no CUDA types in headers), compilable only when `USE_CUDA=ON`:
+- **`DerivativeOps`** — GPU L2-normalise, rescale to [−1,1], and weighted combine of derivative vectors (Thrust-based; **fully implemented**).
+- **`LabelMetricKernels`** — GPU per-label Dice kernel (**fully implemented**); kappa value and derivative stubs ready for refinement.
+- **`DistanceTransform`** — Felzenszwalb separable signed distance transform structure in place; 1-D kernel pass to be completed.
+- **`DeviceMemoryPool`** — 256-byte-aligned pre-allocated GPU memory pool utility.
+
+### Phase 3 — Python Package (`mplus-registration`)
+A new Python package lives in `python/` and is **installable right now** without a C++ build:
+```bash
+cd python && pip install -e .
+```
+Key modules:
+- `mplus.config` — `MetricWeights` and `RegistrationConfig` dataclasses with JSON save/load.
+- `mplus.registration` — `Registration` class with `run()` (native C++ or CLI fallback) and `dry_run()` (parameter/memory estimator).
+- `mplus.visualization` — `plot_registration_checkerboard()`, `plot_label_dice()`, `plot_metric_convergence()`, `plot_before_after()`, `plot_difference_map()`.
+- `mplus/_core.cpp` — pybind11 bindings stub (wired up once C++ build is available).
+- 40 unit tests under `python/tests/` (33 pure-Python, 7 GPU-skippable).
+
+### Phase 4 — CI/CD & Docker
+
+
+## Additional v2 Changes (completed but not previously documented)
+
+- CMake modernization across the repository: `cmake_minimum_required(VERSION 3.18)`, `CXX_STANDARD 17`, options `USE_CUDA`, `BUILD_PYTHON`, `BUILD_TESTS` added and propagated to subdirectories.
+- Added an ITK compatibility header `src/Metrics/Mplus/itkMplusCompat.h` to support both ITK 4.x and ITK 5.x without code duplication.
+- Created a CUDA directory `src/Metrics/Mplus/cuda/` with kernels and utilities: `DerivativeOps` (L2-normalise, rescale, combine), `LabelMetricKernels` (Dice forward-pass + per-label reduction), `DistanceTransform` (separable DT structure and stubs), and `DeviceMemoryPool` (aligned pool). Some kernels are fully implemented (derivative ops, Dice forward pass); others are scaffolding or partial (distance transform 1-D pass, kappa derivative kernel waiting finalisation).
+- Python packaging scaffold under `python/`: `pyproject.toml`, `setup.py`, `CMakeLists.txt` for pybind11, `mplus` package with `registration.py`, `visualization.py`, `__init__.py`, and a minimal `mplus/_core.cpp` binding stub. The package installs editable via `pip install -e python/` for pure-Python use; the pybind11 native extension is wired but optional.
+- Unit tests added under `python/tests/` (40 tests: 33 pure-Python passing, 7 GPU-skipped on machines without CUDA).
+- Added `python/scripts/chain_registration.py` — a robust chain runner with presets, dry-run profiling, ITK thread control, multi-scale B-spline scheduling, and sensible defaults tuned for speed/accuracy tradeoffs.
+- CI workflows added/extended: `test.yml` for CPU matrix builds + Python tests and linting; GPU workflow `gpu-tests.yml` for CUDA-enabled runners (tag-triggered).
+- Dockerfile updated to use ITK5 packages and to install the Python package inside the image for reproducible runs.
+- Sphinx docs scaffolding added under `python/docs/`.
+- Verified a working v2 build on this machine (built with local ITK 4.13 due to system ITK 5 packaging differences) — four executables produced in `build-v2/bin/` and a CUDA-enabled build in `build-cuda/bin/` was also produced with `USE_CUDA=ON` for experimentation.
+
+## Roadmap Status (summary)
+
+This project has progressed beyond the original roadmap in several areas; below is a concise status update and the immediate next steps.
+
+- **Completed / Implemented**
+  - CMake modernization, C++17 upgrade, OpenMP/ITK thread detection.
+  - `itkMplusCompat.h` compatibility shim for ITK4↔ITK5.
+  - Initial CUDA implementation directory and several kernels (see above).
+  - Python package skeleton and high-level API (`mplus.registration`), tests, and visualisation helpers.
+  - `python/scripts/chain_registration.py` for staged pipelines (similarity → affine → bspline coarse-to-fine) with presets and dry-run profiling.
+  - CI/CD flows and Docker updates.
+
+- **In-progress / Next steps**
+  - Finish and validate the `DistanceTransform` CUDA kernel (complete 1-D passes and end-to-end correctness tests).
+  - Implement kappa-derivative kernel and wire label-metric derivative assembly on GPU.
+  - Wire CUDA calls into `src/Metrics/Mplus/itkMplus.hxx` with `#ifdef USE_CUDA` guards for (i) distance-map computation, (ii) derivative normalisation/rescale/combine, and (iii) per-label metric evaluation.
+  - Complete pybind11 native bindings (`mplus/_core.cpp`) to expose the full registration pipeline natively to Python (currently a functional stub and CLI-fallback wrapper exists).
+  - Add benchmark suite (CPU vs GPU) and tune kernels for memory and occupancy (auto-select block sizes, stream overlap).
+  - Publish `mplus-registration` to PyPI after native bindings and packaging tested across platforms.
+  - Add comprehensive GPU CI (self-hosted or cloud images with NVIDIA GPUs) to run the GPU test subset automatically.
+
+If you want, I can now (pick one):
+
+- finish and test the `DistanceTransform` GPU kernel and push the change; or
+- implement the `#ifdef USE_CUDA` wiring in `itkMplus.hxx` so the existing CUDA kernels are used; or
+- finish the pybind11 bindings and release a first `mplus-registration==2.0.0rc1` to a private index for you to try.
+
 ## Installation
 
 ### Prerequisites
 
-Make sure your system has the following dependencies installed. You can install them using the commands below:
-
 ```bash
 sudo apt-get update
-sudo apt-get install -y cmake build-essential libinsighttoolkit4-dev
+# ITK 5.x (Ubuntu 22.04+)
+sudo apt-get install -y cmake build-essential libinsighttoolkit5-dev
 sudo apt-get install -y libpng-dev libjpeg-dev libtiff-dev libdcmtk-dev libfltk1.3-dev libeigen3-dev
-sudo apt-get install -y libboost-all-dev
+sudo apt-get install -y libboost-program-options-dev
+
+# Optional — ITK 4.x (still supported)
+# sudo apt-get install -y libinsighttoolkit4-dev
+```
+
+### Python package (no C++ build needed)
+```bash
+pip install mplus-registration          # PyPI (once released)
+# OR from source:
+git clone https://github.com/erosmontin/registrationMplus.git
+cd registrationMplus/python
+pip install -e ".[dev]"                 # editable + test deps
 ```
 
 ## Building
 ```bash
 git clone https://github.com/erosmontin/registrationMplus.git
 cd registrationMplus
-mkdir build && cd build
-cmake ../src
-make -j4
+mkdir build-v2 && cd build-v2
+
+# With system ITK 5.x:
+cmake ../src -DCMAKE_BUILD_TYPE=Release
+
+# OR explicit ITK path (e.g. local ITK 4.13):
+cmake ../src -DCMAKE_BUILD_TYPE=Release -DITK_DIR=/usr/local/lib/cmake/ITK-4.13
+
+# With CUDA acceleration (requires CUDA Toolkit ≥ 11.8):
+cmake ../src -DCMAKE_BUILD_TYPE=Release -DUSE_CUDA=ON
+
+make -j$(nproc)
 ```
 
-The four executables are placed in `build/bin/`:
+The four executables are placed in `build-v2/bin/`:
 - `3DRegSimilarity` — Similarity (7-DOF) registration
 - `3DRegAffine` — Affine (12-DOF) registration
 - `3DRegAffineMultiLevel` — Multi-resolution affine (12-DOF) registration
@@ -404,6 +499,63 @@ Run any executable with `--help` to see the full option list at the command line
 
 ---
 
+## Python API Quick Reference
+
+```python
+from mplus import Registration, RegistrationConfig, MetricWeights
+
+# Configure
+config = RegistrationConfig(
+    weights=MetricWeights(
+        mi=1.0,      # Mutual Information (α)
+        ngf=0.5,     # Normalized Gradient Field (λ)
+        label=0.3,   # Signed-distance label metric (κ)
+    ),
+    grid_spacing=30.0,          # B-spline control-point spacing (mm)
+    num_levels=4,
+    iterations_per_level=250,
+    auto_estimate_eta=True,      # Auto-tune NGF η parameter
+)
+
+# Dry-run: check parameter counts / memory before running
+reg = Registration(config)
+print(reg.dry_run((256, 256, 256)))
+# → {'n_parameters': 39204, 'active_metrics': ['MI','NGF','Label'], ...}
+
+# Run (requires compiled _core or SimpleITK + CLI binaries on PATH)
+import numpy as np
+result = reg.run(
+    fixed_img, moving_img,
+    spacing=np.array([1.0, 1.0, 1.0]),
+    fixed_labels=fixed_seg,
+    moving_labels=moving_seg,
+)
+print(result.dice_scores)          # {1: 0.87, 2: 0.91, ...}
+print(result.execution_time_sec)   # 42.3
+
+# Visualise
+from mplus.visualization import plot_registration_checkerboard, plot_label_dice
+plot_registration_checkerboard(fixed_img, result.warped_image).savefig("check.png")
+plot_label_dice(result.dice_scores).savefig("dice.png")
+```
+
+### Save / Load configs as JSON
+```python
+config.save("my_config.json")
+config2 = RegistrationConfig.load("my_config.json")
+```
+
+### Preset configurations
+```python
+from mplus.config import mionly_config, mi_label_config, multimodal_config, label_driven_config
+
+cfg = mi_label_config()       # MI=1.0, label=0.5, grid=35mm, 4 levels
+cfg = multimodal_config()     # MI=1.0, NGF=0.5, MSE=0.2, 300 iters
+cfg = label_driven_config()   # MI=0.3, label=1.0, 5 levels
+```
+
+---
+
 ## Docker
 
 ```bash
@@ -431,6 +583,7 @@ singularity run regsuite.sif \
 - **NMI (Normalized Mutual Information):** The `--sigma` metric uses a joint histogram (bins controlled by `--nmibins`, default 64). It is histogram-based, robust across modalities, and does not use random voxel subsampling. Prefer NMI over standard MI when the intensity relationship is non-linear or when normalised overlap robustness is important.
 - The `-P` short flag maps to `--dfltpixelvalue` in Similarity/Affine but to `--projectedgradienttolerance` in B-splines (a B-spline-specific optimiser parameter).
 - **v5.0 breaking change:** The legacy `-Z` / `--normalizederivatives` flag has been removed. Use `--derivativemode 1` instead.
+- **v2.0-rc breaking change:** CMake minimum version raised to 3.18. Remove any existing `build/` directory and reconfigure.
 - **Cross-transform `-W` support:** `3DRegAffine` and `3DRegAffineMultiLevel` can now warm-start from any linear ITK transform file (e.g. a `Similarity3DTransform` `.tfm` written by `3DRegSimilarity`). The transform is automatically converted to `AffineTransform` at load time. Previously, passing a non-`AffineTransform` file would crash with a segfault.
 - **B-spline padding and direction matrices:** ITK's B-spline transform requires control points both inside and outside the image domain for proper basis function evaluation at boundaries. The `--overlappadding` parameter controls how many *physical* control points are placed outside the domain per side. The B-spline domain origin is computed to account for the image direction matrix (which can have negative diagonals, e.g., LPS orientation). ITK internally manages additional border coefficients for numerical stability, separate from `--overlappadding`. When `--snapshotgrid=true`, the actual mesh positions are visualised to allow verification of correct placement.
 - **Metric padding (`--metricpadding`):** Separate from B-spline domain padding. Controls voxel padding around the fixed-moving image overlap region where metrics are evaluated. Default is 20 voxels.
