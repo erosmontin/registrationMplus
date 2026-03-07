@@ -207,7 +207,12 @@
     "overlap_padding": {
       "type": "integer",
       "minimum": 0,
-      "description": "Overlap padding in voxels (--overlappadding). Default: 20"
+      "description": "B-spline control points per side outside image domain (--overlappadding). Default: 3 (for B-splines); for other transforms, controls voxel padding in metric overlap. Note: ITK's internal B-spline border handling is separate."
+    },
+    "metric_padding": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Metric overlap padding in voxels (--metricpadding). Default: 20. Padding around the computed overlap region for metric evaluation."
     },
     "metric_overlap": {
       "type": "boolean",

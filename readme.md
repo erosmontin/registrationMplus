@@ -161,17 +161,21 @@ A typical workflow registers images in order of increasing flexibility:
 | `--snapshotdir` | `N` | Directory for iteration snapshots (`N` = off) |
 | `--snapshotevery` | `1` | Save a snapshot every N iterations |
 | `--snapshotstack` | `false` | `false`=mid-axial 2D PNG; `true`=full 3D `.nii.gz` |
-| `--snapshotgrid` | `true` | When enabled, snapshots include a deformation-grid overlay panel showing warped grid lines over the registered moving image (default: on). |
-| `--snapshotgridspacing` | `20` | Grid line spacing in voxels for the deformation overlay (`--snapshotgridspacing 10` → denser lines). |
+| `--snapshotgrid` | `true` | When enabled, snapshots include a deformation-grid overlay panel (default: on). For B-splines, this shows the actual B-spline control-point mesh. |
+| `--snapshotgridspacing` | `20` | Grid line spacing in voxels for the deformation overlay (`--snapshotgridspacing 10` → denser lines). Only applies when overlay is a regular deformation grid. |
 
 Snapshots (PNG mode) now use a 2×2 layout with the following order:
 
 - (1,1) Fixed (target) image
 - (1,2) Registered moving image (resampled with current transform)
 - (2,1) Checkerboard (fixed | registered)
-- (2,2) Registered moving image with green warped-grid overlay (visualises deformation)
+- (2,2) Registered moving image with overlay (visualises deformation)
 
-The overlay uses bright green lines so even small B-spline warps are clearly visible when lines bend relative to the fixed image anatomy.
+**Overlay behaviour:**
+- For **affine/similarity** transforms: bright green warped-grid overlay showing deformation field
+- For **B-splines** with `--snapshotgrid=true` (default): renders the actual cubic B-spline control-point mesh (knot lattice) as green lines. The mesh extends beyond the image domain to show all physical control points; a **dim yellow border** marks the original fixed image extent. The first snapshot prints a diagnostic message showing the B-spline mesh bounding box and padding amounts.
+
+All four panels are padded to contain the full B-spline mesh when visible, allowing inspection of out-of-domain control points.
 
 ### General
 
@@ -182,7 +186,8 @@ The overlay uses bright green lines so even small B-spline warps are clearly vis
 | | `--dfltpixelvalue` | `0` | Fill value for out-of-bounds voxels |
 | `-V` | `--verbose` | `false` | Print all parsed options at startup |
 | | `--metricoverlap` | `true` | Compute and report image overlap |
-| | `--overlappadding` | `20` | Overlap padding in voxels (padding around the computed overlap region) |
+| | `--overlappadding` | `20` (Aff/Sim), `3` (Bsp) | **For B-splines:** number of control points to place outside the image domain per side (--overlappadding). Default: `3`. **For other transforms:** voxel padding in metric overlap. Note: ITK's internal B-spline border handling (for basis evaluation) is separate and automatic. |
+| | `--metricpadding` | `20` | Overlap padding in voxels for metric evaluation (--metricpadding). Padding around the computed overlap region where metrics are evaluated. |
 | | `--version` | | Print version string (`v5.0`) and exit |
 
 ### Modality Presets
@@ -332,11 +337,15 @@ Uses a cubic `BSplineTransform` with the `LBFGSBOptimizer` (quasi-Newton). The n
 
 > **Important:** Derivative mode 1 (normalised) is **not compatible** with the LBFGS-B optimiser and will be rejected with an error. Use mode 0 or mode 2.
 
+> **B-spline mesh visualization:** When snapshots are enabled (`--snapshotdir`), the overlay panel displays the actual cubic B-spline control-point mesh. The mesh is positioned correctly relative to the anatomy regardless of image direction (e.g. negative direction diagonals in LPS-oriented images are handled automatically). The mesh extends beyond the image domain by `--overlappadding` control points per side; a dim yellow border in the snapshot shows where the original image domain ends. All snapshot panels pad equally to contain the full mesh for inspection.
+
 | Short | Long | Default | Description |
 |-------|------|---------|-------------|
 | `-g` | `--gridresolution` | `50` | B-spline control-point grid spacing (mm) |
 | `-B` | `--bsplinecaching` | `true` | Cache B-spline basis weights for speed |
 | | `--meshmarginsize` | `0.0` | Extra margin (mm) added around the image domain for the mesh |
+| | `--overlappadding` | `3` | B-spline control points per side outside image domain (--overlappadding). ITK's internal padding for basis evaluation is automatic and separate. |
+| | `--metricpadding` | `20` | Overlap padding in voxels for metric evaluation (--metricpadding). |
 | `-G` | `--gridposition` | `N` | Read control-point grid positions from file (`N` = auto) |
 | `-I` | `--maxnumberofiterations` | `1000` | Maximum optimiser iterations |
 | `-F` | `--costfunctionconvergencefactor` | `1e12` | LBFGSB convergence factor (lower = more precise) |
@@ -423,6 +432,8 @@ singularity run regsuite.sif \
 - The `-P` short flag maps to `--dfltpixelvalue` in Similarity/Affine but to `--projectedgradienttolerance` in B-splines (a B-spline-specific optimiser parameter).
 - **v5.0 breaking change:** The legacy `-Z` / `--normalizederivatives` flag has been removed. Use `--derivativemode 1` instead.
 - **Cross-transform `-W` support:** `3DRegAffine` and `3DRegAffineMultiLevel` can now warm-start from any linear ITK transform file (e.g. a `Similarity3DTransform` `.tfm` written by `3DRegSimilarity`). The transform is automatically converted to `AffineTransform` at load time. Previously, passing a non-`AffineTransform` file would crash with a segfault.
+- **B-spline padding and direction matrices:** ITK's B-spline transform requires control points both inside and outside the image domain for proper basis function evaluation at boundaries. The `--overlappadding` parameter controls how many *physical* control points are placed outside the domain per side. The B-spline domain origin is computed to account for the image direction matrix (which can have negative diagonals, e.g., LPS orientation). ITK internally manages additional border coefficients for numerical stability, separate from `--overlappadding`. When `--snapshotgrid=true`, the actual mesh positions are visualised to allow verification of correct placement.
+- **Metric padding (`--metricpadding`):** Separate from B-spline domain padding. Controls voxel padding around the fixed-moving image overlap region where metrics are evaluated. Default is 20 voxels.
 
 ## Contributors
 

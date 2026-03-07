@@ -19,7 +19,8 @@
     "mattes_percentage": 0.1,
     "mattes_bins": 64
   },
-  "overlap_padding": 20,
+  "overlap_padding": 3,
+  "metric_padding": 20,
   "number_of_threads": 2,
   "snapshots": {
     "directory": "N",
@@ -28,5 +29,5 @@
     "grid": true,
     "grid_spacing": 20
   },
-  "notes": "Deformable non-rigid registration with B-spline control points. Most flexible, requires more computation. Uses LBFGS-B optimizer. Snapshots: 2x2 panel with fixed | registered | checkerboard | registered+green-grid overlay."
+  "notes": "Deformable non-rigid registration with B-spline control points. Most flexible, requires more computation. Uses LBFGS-B optimizer. overlap_padding=3 means 3 B-spline control points will extend beyond the image domain on each side (handling ITK's internal padding separately). metric_padding=20 voxels for metric overlap. Snapshots: 2×2 PNG layout with fixed | registered | checkerboard | registered+B-spline-mesh overlay. Full control-point mesh shown with dim yellow border marking original image extent."
 }
