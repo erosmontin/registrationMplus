@@ -23,7 +23,7 @@
   "label_maps": {
     "fixed": "fixedLabels.nii.gz",
     "moving": "movingLabels.nii.gz",
-    "samples": 20000,
+    "samples": 0.1,
     "report_every": 5,
     "per_label_weights": {
       "1": 1.0,

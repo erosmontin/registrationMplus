@@ -160,7 +160,18 @@ A typical workflow registers images in order of increasing flexibility:
 |------|---------|-------------|
 | `--snapshotdir` | `N` | Directory for iteration snapshots (`N` = off) |
 | `--snapshotevery` | `1` | Save a snapshot every N iterations |
-| `--snapshotstack` | `false` | `false`=mid-axial 2D PNG (fixed \| resampled \| checkerboard); `true`=full 3D `.nii.gz` |
+| `--snapshotstack` | `false` | `false`=mid-axial 2D PNG; `true`=full 3D `.nii.gz` |
+| `--snapshotgrid` | `true` | When enabled, snapshots include a deformation-grid overlay panel showing warped grid lines over the registered moving image (default: on). |
+| `--snapshotgridspacing` | `20` | Grid line spacing in voxels for the deformation overlay (`--snapshotgridspacing 10` → denser lines). |
+
+Snapshots (PNG mode) now use a 2×2 layout with the following order:
+
+- (1,1) Fixed (target) image
+- (1,2) Registered moving image (resampled with current transform)
+- (2,1) Checkerboard (fixed | registered)
+- (2,2) Registered moving image with green warped-grid overlay (visualises deformation)
+
+The overlay uses bright green lines so even small B-spline warps are clearly visible when lines bend relative to the fixed image anatomy.
 
 ### General
 
@@ -174,7 +185,7 @@ A typical workflow registers images in order of increasing flexibility:
 | | `--overlappadding` | `20` | Overlap padding in voxels (padding around the computed overlap region) |
 | | `--version` | | Print version string (`v5.0`) and exit |
 
-### Modality Presets (`3DRegSimilarity` only)
+### Modality Presets
 
 | Long | Default | Description |
 |------|---------|-------------|
@@ -194,7 +205,7 @@ When `--modality` is set to `multimodal` or `singlemodal`, sensible default weig
 | `--labelkappaderiv` | `0.0` | Global weight for the label signed-distance derivative (0 = off) |
 | `--labelkappavec` | `""` | Per-label metric weights: `"L1:w1,L2:w2,..."` |
 | `--labelkappaderivvec` | `""` | Per-label derivative weights: `"L1:w1,L2:w2,..."` |
-| `--labelsamples` | `20000` | Voxel samples used to evaluate the label term |
+| `--labelsamples` | `0.1` | Label metric percentage of pixels used to evaluate the label term (0.1 = 10%) |
 | `--labelreport` | `1` | Print per-label Dice coefficients every N iterations (0 = off) |
 
 When both label maps are provided and all kappa weights are `0.0` (the default), the label term acts as a **monitoring-only** observer — it prints Dice coefficients at each iteration without affecting the optimisation.
@@ -377,7 +388,7 @@ Uses a cubic `BSplineTransform` with the `LBFGSBOptimizer` (quasi-Newton). The n
   --labelkappa 0.1 --labelkappaderiv 0.1 \
   --labelkappavec "1:1.0,2:0.5,3:0.5" \
   --labelkappaderivvec "1:1.0,2:0.5,3:0.5" \
-  --labelsamples 20000 --labelreport 10
+  --labelsamples 0.1 --labelreport 10
 ```
 
 Run any executable with `--help` to see the full option list at the command line.

@@ -82,7 +82,7 @@
     "modality": {
       "type": "string",
       "enum": ["custom", "multimodal", "singlemodal"],
-      "description": "Preset modality (--modality, Similarity only). 'multimodal' sets MI+NGF defaults; 'singlemodal' sets MSE+NC defaults; 'custom' uses manual weights. Default: custom"
+      "description": "Preset modality (--modality). 'multimodal' sets MI+NGF defaults; 'singlemodal' sets MSE+NC defaults; 'custom' uses manual weights. Default: custom"
     },
     "derivative_mode": {
       "type": "integer",
@@ -235,8 +235,8 @@
           "description": "Moving label map filename (--movinglabelmap). 'N'=none"
         },
         "samples": {
-          "type": "integer", "minimum": 1,
-          "description": "Voxel samples for label metric (--labelsamples). Default: 20000"
+          "type": "number", "minimum": 0, "maximum": 1,
+          "description": "Label metric percentage of pixels used (--labelsamples). Default: 0.1 (10%)"
         },
         "report_every": {
           "type": "integer", "minimum": 0,
@@ -269,6 +269,16 @@
         "stack": {
           "type": "boolean",
           "description": "true=full 3D .nii.gz, false=mid-axial PNG (--snapshotstack). Default: false"
+        }
+        ,
+        "grid": {
+          "type": "boolean",
+          "description": "Overlay a warped deformation grid on the registered image panel (--snapshotgrid). Default: true"
+        },
+        "grid_spacing": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Grid line spacing in voxels for the deformation grid overlay (--snapshotgridspacing). Default: 20"
         }
       }
     },

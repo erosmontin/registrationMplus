@@ -87,6 +87,7 @@ int main( int argc, char *argv[] )
         ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
         ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
         ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
+        ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
 	    ("nu,n", po::value<double>()->default_value(1.0), "nu value MSE 1.0")
 		("nuderivative,N", po::value<double>()->default_value(1.0), "nu MSE derivative 1.0")
         ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
@@ -119,13 +120,17 @@ int main( int argc, char *argv[] )
 	("labelkappaderiv",po::value<double>()->default_value(0.0),       "Global kappa weight for label-map derivative")
 	("labelkappavec",  po::value<std::string>()->default_value(""),   "Per-label kappa (value) weights: 'L1:w1,L2:w2,...'")
 	("labelkappaderivvec", po::value<std::string>()->default_value(""),"Per-label kappa (derivative) weights: 'L1:w1,L2:w2,...'")
-	("labelsamples",   po::value<unsigned int>()->default_value(20000),"Samples for label metric")
+	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric percentage of pixels used (0.1 = 10%)")
 	("labelreport",    po::value<int>()->default_value(1),            "Report Dice every N iterations (0 = off)")
 	("snapshotdir",    po::value<std::string>()->default_value("N"), "Directory for iteration snapshots (N = off)")
 	("snapshotevery",  po::value<int>()->default_value(1),            "Save snapshot every N iterations")
 	("snapshotstack",  po::value<bool>()->default_value(false),       "Save full 3D .nii.gz instead of mid-slice PNG")
+	("snapshotgrid",   po::value<bool>()->default_value(true),        "Overlay warped grid on snapshot panels (default on)")
+	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels")
 	("version", "Print version and exit")
 	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
+	("modality", po::value<std::string>()->default_value("custom"),
+		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
  ;
 	
 
@@ -160,11 +165,13 @@ int main( int argc, char *argv[] )
 	const std::string SNAPSHOTDIR     = vm["snapshotdir"].as<std::string>();
 	const int         SNAPSHOTEVERY   = vm["snapshotevery"].as<int>();
 	const bool        SNAPSHOTSTACK   = vm["snapshotstack"].as<bool>();
+	const bool        SNAPSHOTGRID    = vm["snapshotgrid"].as<bool>();
+	const unsigned int SNAPSHOTGRIDSP  = vm["snapshotgridspacing"].as<unsigned int>();
 
 	// ── label map options ──────────────────────────────────────────
 	const double      LABELKAPPA      = vm["labelkappa"].as<double>();
 	const double      LABELKAPPADERIV = vm["labelkappaderiv"].as<double>();
-	const unsigned int LABELSAMPLES   = vm["labelsamples"].as<unsigned int>();
+	const double LABELSAMPLES   = vm["labelsamples"].as<double>();
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 
@@ -408,6 +415,7 @@ if (method == "translation") {
 	metric->SetLambda(LAMBDA);
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
+	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNu(NU);
 	metric->SetNuDerivative(NUDERIVATIVE);
@@ -537,6 +545,8 @@ if (method == "translation") {
 		snapObs->SetOutputDirectory(SNAPSHOTDIR);
 		snapObs->SetSaveEveryNIterations(static_cast<unsigned int>(SNAPSHOTEVERY));
 		snapObs->SetSaveStack(SNAPSHOTSTACK);
+		snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
+		snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
 		optimizer->AddObserver(itk::IterationEvent(), snapObs);
 	}
       // Add a time probe

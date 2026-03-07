@@ -36,6 +36,7 @@ NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
 ::NormalizedGradientFieldImageToImageMetric()
 {m_FixedNoise=1;
 	m_MovingNoise=1;
+	m_PrecomputeGradient=false;
 }
 
 
@@ -96,6 +97,50 @@ NormalizedGradientFieldImageToImageMetric<TFixedImage,TMovingImage>
 	if (!m_Evaluator.get())
 		m_Evaluator.reset(new NGFScaledDeltaKernel<MovingNGFType,FixedNGFType>); 
 
+	// ── precompute moving-image NGF once, resample each iteration ──────────
+	if (m_PrecomputeGradient)
+	{
+		typename ImageToNGFFilter<TMovingImage>::Pointer nativeNGF =
+		    ImageToNGFFilter<TMovingImage>::New();
+		nativeNGF->SetInput(this->m_MovingImage);
+		nativeNGF->SetNoise(m_MovingNoise);
+		nativeNGF->Update();
+		m_PrecomputedMovingNGF = nativeNGF->GetOutput();
+		m_PrecomputedMovingNGF->DisconnectPipeline();
+
+		// set up the vector resampler
+		m_VectorResampler = VectorResampleType::New();
+		m_VectorResampler->SetInput(m_PrecomputedMovingNGF);
+		m_VectorResampler->SetTransform(this->m_Transform);
+		m_VectorResampler->SetSize(
+		    this->m_FixedImage->GetLargestPossibleRegion().GetSize());
+		m_VectorResampler->SetOutputOrigin(this->m_FixedImage->GetOrigin());
+		m_VectorResampler->SetOutputSpacing(this->m_FixedImage->GetSpacing());
+		m_VectorResampler->SetOutputDirection(this->m_FixedImage->GetDirection());
+
+		typedef VectorLinearInterpolateImageFunction<MovingNGFType, double>
+		    VectorInterpolatorType;
+		typename VectorInterpolatorType::Pointer vecInterp =
+		    VectorInterpolatorType::New();
+		m_VectorResampler->SetInterpolator(vecInterp);
+
+		// initial resample so m_MovingNGF is valid
+		m_VectorResampler->Update();
+		m_MovingNGF = m_VectorResampler->GetOutput();
+
+		// reconnect gradient-of-NGF filters to the resampled field
+		for (unsigned int i = 0; i < TMovingImage::ImageDimension; ++i)
+		{
+			m_GradientFilters[i]->SetInput(m_MovingNGF);
+			m_GradientFilters[i]->UpdateLargestPossibleRegion();
+			m_GradientComponent[i] = m_GradientFilters[i]->GetOutput();
+		}
+
+		std::cout << "[NGF] Precompute-gradient mode enabled: moving NGF "
+		             "computed once and will be resampled each iteration."
+		          << std::endl;
+	}
+
     m_CachedParameters = this->m_Transform->GetParameters();
     m_CachedGradient = this->GetGradient(m_CachedParameters);
 }
@@ -121,6 +166,18 @@ template <class FI, class MI>
 void NormalizedGradientFieldImageToImageMetric<FI,MI>::SetEvaluator(EvaluatorKernelType *evaluator)
 {
 	m_Evaluator.reset(evaluator);
+}
+
+/**
+ * Update m_MovingNGF from the precomputed NGF via vector resampling.
+ */
+template <class FI, class MI>
+void
+NormalizedGradientFieldImageToImageMetric<FI,MI>::UpdatePrecomputedMovingNGF() const
+{
+	m_VectorResampler->Modified();
+	m_VectorResampler->Update();
+	// m_MovingNGF already points to the resampler output
 }
 
 /**
@@ -216,7 +273,10 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetValue( const TransformParam
 {
     if (m_CachedValueParameters != parameters) {
         this->m_Transform->SetParameters(parameters); 
-        m_MovingNGFEvaluator->Update(); 
+        if (m_PrecomputeGradient)
+            UpdatePrecomputedMovingNGF();
+        else
+            m_MovingNGFEvaluator->Update(); 
         m_CachedValueParameters = parameters;
         m_CachedValue = DoGetValue();
     }
@@ -252,7 +312,10 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetValueAndDerivative( const T
     // Use cached value if available
     if (m_CachedValueParameters != parameters) {
         this->m_Transform->SetParameters(parameters); 
-        m_MovingNGFEvaluator->Update(); 
+        if (m_PrecomputeGradient)
+            UpdatePrecomputedMovingNGF();
+        else
+            m_MovingNGFEvaluator->Update(); 
         m_CachedValueParameters = parameters;
         m_CachedValue = DoGetValue();
     }
@@ -265,7 +328,10 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetGradient(const TransformPar
 {
 	// transform moving image 
 	this->m_Transform->SetParameters(parameters); 
-	m_MovingNGFEvaluator->Update(); 
+	if (m_PrecomputeGradient)
+		UpdatePrecomputedMovingNGF();
+	else
+		m_MovingNGFEvaluator->Update(); 
 
 	ImageRegionConstIterator<MovingNGFType> iti(m_MovingNGF, this->GetFixedImageRegion()); 
 	ImageRegionConstIterator<FixedNGFType> ifi(m_FixedNGF, this->GetFixedImageRegion());

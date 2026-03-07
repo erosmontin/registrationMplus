@@ -21,5 +21,12 @@
   },
   "overlap_padding": 20,
   "number_of_threads": 2,
-  "notes": "Deformable non-rigid registration with B-spline control points. Most flexible, requires more computation. Uses LBFGS-B optimizer."
+  "snapshots": {
+    "directory": "N",
+    "every": 1,
+    "stack": false,
+    "grid": true,
+    "grid_spacing": 20
+  },
+  "notes": "Deformable non-rigid registration with B-spline control points. Most flexible, requires more computation. Uses LBFGS-B optimizer. Snapshots: 2x2 panel with fixed | registered | checkerboard | registered+green-grid overlay."
 }

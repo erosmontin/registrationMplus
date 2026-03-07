@@ -487,6 +487,11 @@ public:
 #include "itkTileImageFilter.h"
 #include "itkExtractImageFilter.h"
 #include "itkRescaleIntensityImageFilter.h"
+#include "itkImageRegionIteratorWithIndex.h"
+#include "itkImageRegionIterator.h"
+#include "itkImageRegionConstIterator.h"
+#include "itkRGBPixel.h"
+#include "itkComposeImageFilter.h"
 #include "itksys/SystemTools.hxx"
 
 template <typename TTransform, typename TImage>
@@ -503,6 +508,8 @@ public:
     using SliceType      = itk::Image<PixelType, Dim - 1>;
     using UCharPixelType = unsigned char;
     using UCharSliceType = itk::Image<UCharPixelType, Dim - 1>;
+    using RGBPixelType   = itk::RGBPixel<UCharPixelType>;
+    using RGBSliceType   = itk::Image<RGBPixelType, Dim - 1>;
 
     void SetFixedImage(const TImage* img)              { m_FixedImage  = img; }
     void SetMovingImage(const TImage* img)             { m_MovingImage = img; }
@@ -510,12 +517,23 @@ public:
     void SetOutputDirectory(const std::string& dir)    { m_OutputDir   = dir; }
     void SetSaveEveryNIterations(unsigned int n)       { m_Every = std::max(1u, n); }
     /** If true, save full 3D resampled volume (.nii.gz).
-     *  If false (default), save a mid-axial 3-panel PNG. */
+     *  If false (default), save a 2×2 panel PNG. */
     void SetSaveStack(bool b)                          { m_SaveStack = b; }
+    /** If true, add a warped‑grid overlay panel (green lines on anatomical
+     *  image) to visualise B‑spline deformation.  Default: true. */
+    void SetShowDeformationGrid(bool b)                { m_ShowGrid = b; }
+    /** Spacing of the regular grid lines (in voxels).  Default: 20. */
+    void SetGridSpacingPixels(unsigned int s)           { m_GridSpacing = std::max(2u, s); }
+    /** If true, draw the actual B-spline control-point lattice (warped by
+     *  the current transform parameters) instead of a regular pixel grid.
+     *  Only has effect when TTransform is itk::BSplineTransform<double,3,3>.
+     *  Default: false. */
+    void SetShowBSplineMesh(bool b)                    { m_ShowBSplineMesh = b; }
 
 protected:
     IterationSnapshotObserver()
-        : m_Every(1), m_SaveStack(false), m_IterCount(0) {}
+        : m_Every(1), m_SaveStack(false), m_ShowGrid(true),
+          m_GridSpacing(20), m_ShowBSplineMesh(false), m_IterCount(0) {}
 
 private:
     typename TImage::ConstPointer      m_FixedImage;
@@ -524,6 +542,9 @@ private:
     std::string                        m_OutputDir;
     unsigned int                       m_Every;
     bool                               m_SaveStack;
+    bool                               m_ShowGrid;
+    unsigned int                       m_GridSpacing;
+    bool                               m_ShowBSplineMesh;
     unsigned long                      m_IterCount;
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -538,7 +559,7 @@ private:
         auto region = vol->GetLargestPossibleRegion();
         auto sz     = region.GetSize();
         auto idx    = region.GetIndex();
-        sz[Dim - 1]  = 0;           // collapse last (axial) dimension
+        sz[Dim - 1]  = 0;
         idx[Dim - 1] = sliceIdx;
         typename TImage::RegionType sliceRegion;
         sliceRegion.SetSize(sz);
@@ -566,6 +587,306 @@ private:
         return out;
     }
 
+    /** Convert a grayscale UChar slice to an RGB slice (all channels equal). */
+    typename RGBSliceType::Pointer
+    GrayToRGB(const UCharSliceType* gray) const
+    {
+        auto rgb = RGBSliceType::New();
+        rgb->CopyInformation(gray);
+        rgb->SetRegions(gray->GetLargestPossibleRegion());
+        rgb->Allocate();
+
+        itk::ImageRegionConstIterator<UCharSliceType> gIt(gray, gray->GetLargestPossibleRegion());
+        itk::ImageRegionIterator<RGBSliceType>        rIt(rgb,  rgb->GetLargestPossibleRegion());
+        for (gIt.GoToBegin(), rIt.GoToBegin(); !gIt.IsAtEnd(); ++gIt, ++rIt)
+        {
+            RGBPixelType px;
+            px.SetRed(gIt.Get());
+            px.SetGreen(gIt.Get());
+            px.SetBlue(gIt.Get());
+            rIt.Set(px);
+        }
+        rgb->DisconnectPipeline();
+        return rgb;
+    }
+
+    /** Create a padded RGB panel: the input image is placed at (offX, offY)
+     *  on a black canvas of size newW × newH. */
+    typename RGBSliceType::Pointer
+    PadRGBPanel(const RGBSliceType* input, int newW, int newH,
+                int offX, int offY) const
+    {
+        auto padded = RGBSliceType::New();
+        typename RGBSliceType::IndexType startIdx; startIdx.Fill(0);
+        typename RGBSliceType::SizeType  padSize;
+        padSize[0] = static_cast<unsigned int>(newW);
+        padSize[1] = static_cast<unsigned int>(newH);
+        typename RGBSliceType::RegionType padRegion;
+        padRegion.SetIndex(startIdx);
+        padRegion.SetSize(padSize);
+        padded->SetRegions(padRegion);
+        padded->Allocate();
+        RGBPixelType black; black.SetRed(0); black.SetGreen(0); black.SetBlue(0);
+        padded->FillBuffer(black);
+
+        itk::ImageRegionConstIterator<RGBSliceType> it(
+            input, input->GetLargestPossibleRegion());
+        for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+        {
+            auto si = it.GetIndex();
+            typename RGBSliceType::IndexType di;
+            di[0] = si[0] + offX;
+            di[1] = si[1] + offY;
+            if (di[0] >= 0 && di[0] < newW && di[1] >= 0 && di[1] < newH)
+                padded->SetPixel(di, it.Get());
+        }
+        return padded;
+    }
+
+    /** Compute the 2D pixel bounding box of the B-spline control lattice
+     *  projected onto the fixed image (considering all z-slices).
+     *  Returns {minX, minY, maxX, maxY} in fixed-image pixel coords. */
+    struct MeshBBox { double minX, minY, maxX, maxY; };
+    MeshBBox ComputeMeshBBox2D(const TImage* fixedImg) const
+    {
+        using BSTransformType = itk::BSplineTransform<double, 3, 3>;
+        auto imgSz = fixedImg->GetLargestPossibleRegion().GetSize();
+        MeshBBox bb = {0.0, 0.0,
+                       static_cast<double>(imgSz[0] - 1),
+                       static_cast<double>(imgSz[1] - 1)};
+        auto* bst = dynamic_cast<BSTransformType*>(m_Transform.GetPointer());
+        if (!bst) return bb;
+
+        using CoeffImageType = typename BSTransformType::ImageType;
+        auto coeffImages = bst->GetCoefficientImages();
+        auto coeffImg = coeffImages[0];
+        auto coeffSize = coeffImg->GetLargestPossibleRegion().GetSize();
+        const unsigned int nx = coeffSize[0], ny = coeffSize[1], nz = coeffSize[2];
+
+        for (unsigned int k = 0; k < nz; ++k)
+        for (unsigned int j = 0; j < ny; ++j)
+        for (unsigned int i = 0; i < nx; ++i)
+        {
+            typename CoeffImageType::IndexType idx3;
+            idx3[0] = i; idx3[1] = j; idx3[2] = k;
+            itk::Point<double, 3> physPt;
+            coeffImg->TransformIndexToPhysicalPoint(idx3, physPt);
+            itk::Point<double, 3> displaced;
+            for (unsigned d = 0; d < 3; ++d)
+                displaced[d] = physPt[d] + coeffImages[d]->GetPixel(idx3);
+            itk::ContinuousIndex<double, 3> ci;
+            fixedImg->TransformPhysicalPointToContinuousIndex(displaced, ci);
+            bb.minX = std::min(bb.minX, ci[0]);
+            bb.minY = std::min(bb.minY, ci[1]);
+            bb.maxX = std::max(bb.maxX, ci[0]);
+            bb.maxY = std::max(bb.maxY, ci[1]);
+        }
+        return bb;
+    }
+
+    /** Draw a thin 1-pixel border rectangle on the canvas to mark the
+     *  original image boundary (drawn in dim yellow). */
+    void DrawImageBorder(typename RGBSliceType::Pointer& canvas,
+                         int canvasW, int canvasH,
+                         int offX, int offY, int imgW, int imgH) const
+    {
+        // top edge
+        DrawLineRGB(canvas.GetPointer(), canvasW, canvasH,
+                    offX, offY, offX + imgW - 1, offY, 100, 100, 40);
+        // bottom edge
+        DrawLineRGB(canvas.GetPointer(), canvasW, canvasH,
+                    offX, offY + imgH - 1, offX + imgW - 1, offY + imgH - 1, 100, 100, 40);
+        // left edge
+        DrawLineRGB(canvas.GetPointer(), canvasW, canvasH,
+                    offX, offY, offX, offY + imgH - 1, 100, 100, 40);
+        // right edge
+        DrawLineRGB(canvas.GetPointer(), canvasW, canvasH,
+                    offX + imgW - 1, offY, offX + imgW - 1, offY + imgH - 1, 100, 100, 40);
+    }
+
+    /** Create a 3D grid image in *moving-image* space.
+     *  Lines every m_GridSpacing voxels; on-line pixels = 1, rest = 0. */
+    typename TImage::Pointer
+    MakeGridImage(const TImage* ref) const
+    {
+        auto grid = TImage::New();
+        grid->CopyInformation(ref);
+        grid->SetRegions(ref->GetLargestPossibleRegion());
+        grid->Allocate();
+        grid->FillBuffer(0);
+
+        using IteratorType = itk::ImageRegionIteratorWithIndex<TImage>;
+        for (IteratorType it(grid, grid->GetLargestPossibleRegion()); !it.IsAtEnd(); ++it)
+        {
+            auto idx = it.GetIndex();
+            bool onLine = false;
+            for (unsigned d = 0; d < Dim; ++d)
+            {
+                if (idx[d] % static_cast<long>(m_GridSpacing) == 0)
+                    onLine = true;
+            }
+            if (onLine)
+                it.Set(static_cast<PixelType>(1));
+        }
+        return grid;
+    }
+
+    /** Overlay green grid lines on an anatomical RGB slice.
+     *  Where gridMask > 0.5, the pixel becomes bright green;
+     *  elsewhere it keeps its original value. */
+    typename RGBSliceType::Pointer
+    OverlayGreenGrid(const RGBSliceType* anatomy,
+                     const UCharSliceType* gridMask) const
+    {
+        auto out = RGBSliceType::New();
+        out->CopyInformation(anatomy);
+        out->SetRegions(anatomy->GetLargestPossibleRegion());
+        out->Allocate();
+
+        itk::ImageRegionConstIterator<RGBSliceType>   aIt(anatomy,  anatomy->GetLargestPossibleRegion());
+        itk::ImageRegionConstIterator<UCharSliceType>  gIt(gridMask, gridMask->GetLargestPossibleRegion());
+        itk::ImageRegionIterator<RGBSliceType>         oIt(out,      out->GetLargestPossibleRegion());
+
+        for (aIt.GoToBegin(), gIt.GoToBegin(), oIt.GoToBegin();
+             !oIt.IsAtEnd(); ++aIt, ++gIt, ++oIt)
+        {
+            if (gIt.Get() > 128)
+            {
+                RGBPixelType px;
+                px.SetRed(0);
+                px.SetGreen(255);
+                px.SetBlue(0);
+                oIt.Set(px);
+            }
+            else
+            {
+                oIt.Set(aIt.Get());
+            }
+        }
+        out->DisconnectPipeline();
+        return out;
+    }
+
+    /** Bresenham line draw in green (or any RGB) directly on an RGBSliceType. */
+    static void DrawLineRGB(RGBSliceType* img, int W, int H,
+                            int x0, int y0, int x1, int y1,
+                            unsigned char r, unsigned char g, unsigned char b)
+    {
+        int dx =  std::abs(x1 - x0), sx = (x0 < x1) ? 1 : -1;
+        int dy = -std::abs(y1 - y0), sy = (y0 < y1) ? 1 : -1;
+        int err = dx + dy;
+        while (true)
+        {
+            if (x0 >= 0 && x0 < W && y0 >= 0 && y0 < H)
+            {
+                typename RGBSliceType::IndexType idx;
+                idx[0] = x0;  idx[1] = y0;
+                RGBPixelType px;  px.SetRed(r);  px.SetGreen(g);  px.SetBlue(b);
+                img->SetPixel(idx, px);
+            }
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy;  x0 += sx; }
+            if (e2 <= dx) { err += dx;  y0 += sy; }
+        }
+    }
+
+    /** Overlay the actual B-spline control-point lattice on an RGB slice.
+     *
+     *  Enumerates all control-point nodes, maps each through the current
+     *  transform (TransformPoint), projects to 2-D pixel coords on
+     *  fixedImg, then draws X- and Y-direction edges for any edge whose
+     *  midpoint lies within 'sliceTol' slices of sliceZ.
+     *
+     *  Falls back silently if TTransform is not
+     *  itk::BSplineTransform<double,3,3>.
+     */
+    void OverlayBSplineMesh(typename RGBSliceType::Pointer& rgbInOut,
+                            const TImage* fixedImg,
+                            unsigned int sliceZ,
+                            int offsetX = 0, int offsetY = 0) const
+    {
+        using BSTransformType = itk::BSplineTransform<double, 3, 3>;
+        auto* bst = dynamic_cast<BSTransformType*>(m_Transform.GetPointer());
+        if (!bst) return;
+
+        // Use the coefficient images directly for exact node positions
+        // and raw displacement coefficients (no B-spline interpolation).
+        using CoeffImageType = typename BSTransformType::ImageType;
+        auto coeffImages = bst->GetCoefficientImages();
+        auto coeffImg = coeffImages[0];  // reference grid
+        auto coeffSize = coeffImg->GetLargestPossibleRegion().GetSize();
+
+        const unsigned int nx = static_cast<unsigned int>(coeffSize[0]);
+        const unsigned int ny = static_cast<unsigned int>(coeffSize[1]);
+        const unsigned int nz = static_cast<unsigned int>(coeffSize[2]);
+
+        // Use the *canvas* dimensions (which may be padded)
+        auto sz2D = rgbInOut->GetLargestPossibleRegion().GetSize();
+        const int W = static_cast<int>(sz2D[0]);
+        const int H = static_cast<int>(sz2D[1]);
+
+        // Tolerance: half a node spacing in z (in voxel units)
+        const double nodeSpacingZ = coeffImg->GetSpacing()[2];
+        const double zSpacingVox  = nodeSpacingZ / fixedImg->GetSpacing()[2];
+        const double sliceTol     = std::max(1.5, zSpacingVox * 0.6);
+
+        // Precompute displaced positions projected to fixed-image 2D.
+        // Displaced position = node physical position + raw coefficient.
+        struct Proj { double px, py, pz; };
+        std::vector<Proj> proj(nx * ny * nz);
+        for (unsigned int k = 0; k < nz; ++k)
+        for (unsigned int j = 0; j < ny; ++j)
+        for (unsigned int i = 0; i < nx; ++i)
+        {
+            typename CoeffImageType::IndexType idx3;
+            idx3[0] = i;  idx3[1] = j;  idx3[2] = k;
+
+            // Physical position of this coefficient node
+            itk::Point<double, 3> physPt;
+            coeffImg->TransformIndexToPhysicalPoint(idx3, physPt);
+
+            // Add the raw displacement coefficient
+            itk::Point<double, 3> displaced;
+            for (unsigned d = 0; d < 3; ++d)
+                displaced[d] = physPt[d] + coeffImages[d]->GetPixel(idx3);
+
+            // Project to fixed image continuous index, then add canvas offset
+            itk::ContinuousIndex<double, 3> ci;
+            fixedImg->TransformPhysicalPointToContinuousIndex(displaced, ci);
+            proj[(k*ny + j)*nx + i] = { ci[0] + offsetX,
+                                        ci[1] + offsetY,
+                                        ci[2] };
+        }
+
+        const double sliceZd = static_cast<double>(sliceZ);
+
+        // Draw edge between two projected nodes if their midpoint Z is
+        // near sliceZ.  No 2D clipping — the canvas is padded to fit.
+        auto drawEdge = [&](const Proj& a, const Proj& b)
+        {
+            const double midZ = (a.pz + b.pz) * 0.5;
+            if (std::abs(midZ - sliceZd) > sliceTol) return;
+            DrawLineRGB(rgbInOut.GetPointer(), W, H,
+                        static_cast<int>(std::round(a.px)),
+                        static_cast<int>(std::round(a.py)),
+                        static_cast<int>(std::round(b.px)),
+                        static_cast<int>(std::round(b.py)),
+                        0, 255, 0);
+        };
+
+        for (unsigned int k = 0; k < nz; ++k)
+        for (unsigned int j = 0; j < ny; ++j)
+        for (unsigned int i = 0; i < nx; ++i)
+        {
+            const Proj& cur = proj[(k*ny + j)*nx + i];
+            if (i + 1 < nx)
+                drawEdge(cur, proj[(k*ny + j)*nx + i + 1]);
+            if (j + 1 < ny)
+                drawEdge(cur, proj[(k*ny + (j+1))*nx + i]);
+        }
+    }
+
 public:
     void Execute(itk::Object* caller, const itk::EventObject& ev) override
     { this->Execute(static_cast<const itk::Object*>(caller), ev); }
@@ -581,7 +902,6 @@ public:
 
         try
         {
-            // Ensure output directory exists
             itksys::SystemTools::MakeDirectory(m_OutputDir);
 
             // Resample the moving image with the current transform
@@ -599,7 +919,6 @@ public:
 
             if (m_SaveStack)
             {
-                // ── full 3D volume ──────────────────────────────────────
                 std::ostringstream fn;
                 fn << m_OutputDir << "/iter_"
                    << std::setfill('0') << std::setw(4) << m_IterCount
@@ -614,7 +933,9 @@ public:
             }
             else
             {
-                // ── mid-axial 3-panel PNG ───────────────────────────────
+                // ── 2×2 panel PNG ───────────────────────────────────────
+                //  (1,1) fixed               | (1,2) registered moving
+                //  (2,1) checkerboard         | (2,2) registered + green grid
                 auto sz = m_FixedImage->GetLargestPossibleRegion().GetSize();
                 unsigned int midZ = sz[Dim - 1] / 2;
 
@@ -627,26 +948,124 @@ public:
                 cb->SetInput1(fixSlice);
                 cb->SetInput2(movSlice);
                 typename CB::PatternArrayType pat;
-                pat.Fill(8);          // 8×8 checkerboard grid
+                pat.Fill(8);
                 cb->SetCheckerPattern(pat);
                 cb->Update();
                 typename SliceType::Pointer chkSlice = cb->GetOutput();
                 chkSlice->DisconnectPipeline();
 
-                // Convert all three to unsigned-char [0,255]
+                // Convert to unsigned-char [0,255]
                 auto fUC  = ToUChar(fixSlice.GetPointer());
                 auto mUC  = ToUChar(movSlice.GetPointer());
                 auto cUC  = ToUChar(chkSlice.GetPointer());
 
-                // Tile horizontally: [fixed | resampled | checkerboard]
-                using Tile = itk::TileImageFilter<UCharSliceType, UCharSliceType>;
+                // Convert all 3 grayscale panels to RGB
+                auto fRGB = GrayToRGB(fUC.GetPointer());
+                auto mRGB = GrayToRGB(mUC.GetPointer());
+                auto cRGB = GrayToRGB(cUC.GetPointer());
+
+                // ── Compute padding to show full B-spline domain ────────
+                int padL = 0, padR = 0, padT = 0, padB = 0;
+                auto imgSz2 = m_FixedImage->GetLargestPossibleRegion().GetSize();
+                const int imgW = static_cast<int>(imgSz2[0]);
+                const int imgH = static_cast<int>(imgSz2[1]);
+
+                if (m_ShowBSplineMesh)
+                {
+                    auto bb = ComputeMeshBBox2D(m_FixedImage.GetPointer());
+                    padL = std::max(0, static_cast<int>(std::ceil(-bb.minX)) + 3);
+                    padT = std::max(0, static_cast<int>(std::ceil(-bb.minY)) + 3);
+                    padR = std::max(0, static_cast<int>(std::ceil(bb.maxX - (imgW - 1))) + 3);
+                    padB = std::max(0, static_cast<int>(std::ceil(bb.maxY - (imgH - 1))) + 3);
+
+                    // Print diagnostic once
+                    if (m_IterCount == m_Every)
+                    {
+                        std::cerr << "[Snapshot] Image size: " << imgW << "x" << imgH
+                                  << ", Mesh bbox (px): ["
+                                  << bb.minX << ", " << bb.minY << "] -> ["
+                                  << bb.maxX << ", " << bb.maxY << "]"
+                                  << ", Padding L/R/T/B: "
+                                  << padL << "/" << padR << "/" << padT << "/" << padB
+                                  << std::endl;
+                    }
+                }
+
+                bool needPad = (padL > 0 || padR > 0 || padT > 0 || padB > 0);
+                int canvasW = imgW + padL + padR;
+                int canvasH = imgH + padT + padB;
+
+                // If padding needed, pad all 4 panels to same size
+                typename RGBSliceType::Pointer fP, mP, cP;
+                if (needPad)
+                {
+                    fP = PadRGBPanel(fRGB.GetPointer(), canvasW, canvasH, padL, padT);
+                    mP = PadRGBPanel(mRGB.GetPointer(), canvasW, canvasH, padL, padT);
+                    cP = PadRGBPanel(cRGB.GetPointer(), canvasW, canvasH, padL, padT);
+                }
+                else
+                {
+                    fP = fRGB;
+                    mP = mRGB;
+                    cP = cRGB;
+                }
+
+                // Panel (2,2): registered moving with overlay
+                //   m_ShowBSplineMesh → real B-spline control-point lattice
+                //   m_ShowGrid        → regular pixel-spaced warped grid
+                //   neither           → plain registered moving image
+                typename RGBSliceType::Pointer gridRGB;
+                if (m_ShowBSplineMesh)
+                {
+                    // Create padded canvas with registered moving image,
+                    // then overlay the full B-spline lattice.
+                    gridRGB = PadRGBPanel(mRGB.GetPointer(), canvasW, canvasH, padL, padT);
+                    OverlayBSplineMesh(gridRGB, m_FixedImage.GetPointer(), midZ, padL, padT);
+                    // Draw dim border showing original image extent
+                    DrawImageBorder(gridRGB, canvasW, canvasH, padL, padT, imgW, imgH);
+                }
+                else if (m_ShowGrid)
+                {
+                    // Build a regular grid in moving-image space, then
+                    // resample it into fixed space with the same transform
+                    // used for the moving image.  Grid lines that were
+                    // originally straight will bend wherever the B-spline
+                    // deforms.
+                    auto gridImg = MakeGridImage(m_MovingImage.GetPointer());
+
+                    using ResampleGrid = itk::ResampleImageFilter<TImage, TImage>;
+                    auto rsg = ResampleGrid::New();
+                    rsg->SetInput(gridImg);
+                    rsg->SetTransform(m_Transform);
+                    rsg->SetSize(m_FixedImage->GetLargestPossibleRegion().GetSize());
+                    rsg->SetOutputSpacing(m_FixedImage->GetSpacing());
+                    rsg->SetOutputOrigin(m_FixedImage->GetOrigin());
+                    rsg->SetOutputDirection(m_FixedImage->GetDirection());
+                    rsg->SetDefaultPixelValue(0);
+                    rsg->Update();
+
+                    auto warpedGridSlice = ExtractAxialSlice(rsg->GetOutput(), midZ);
+                    auto wgUC = ToUChar(warpedGridSlice.GetPointer());
+
+                    gridRGB = OverlayGreenGrid(mRGB.GetPointer(), wgUC.GetPointer());
+                }
+                else
+                {
+                    gridRGB = mRGB;
+                }
+
+                // Tile 2×2 as RGB:
+                //  (0) top-left=fixed  (1) top-right=registered
+                //  (2) bot-left=checker (3) bot-right=registered+grid
+                using Tile = itk::TileImageFilter<RGBSliceType, RGBSliceType>;
                 auto tiler = Tile::New();
-                tiler->SetInput(0, fUC);
-                tiler->SetInput(1, mUC);
-                tiler->SetInput(2, cUC);
+                tiler->SetInput(0, fP);         // (1,1) fixed
+                tiler->SetInput(1, mP);         // (1,2) registered moving
+                tiler->SetInput(2, cP);         // (2,1) checkerboard
+                tiler->SetInput(3, gridRGB);    // (2,2) registered + green grid
                 itk::FixedArray<unsigned int, Dim - 1> layout;
-                layout[0] = 3;   // 3 columns
-                layout[1] = 1;   // 1 row
+                layout[0] = 2;   // 2 columns
+                layout[1] = 2;   // 2 rows
                 tiler->SetLayout(layout);
                 tiler->Update();
 
@@ -656,7 +1075,7 @@ public:
                    << std::setfill('0') << std::setw(4) << m_IterCount
                    << ".png";
 
-                using W = itk::ImageFileWriter<UCharSliceType>;
+                using W = itk::ImageFileWriter<RGBSliceType>;
                 auto w = W::New();
                 w->SetFileName(fn.str());
                 w->SetInput(tiler->GetOutput());

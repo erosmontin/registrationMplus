@@ -15,6 +15,9 @@
 #include "itkTransformToDeformationFieldSource.h"
 #include "itkTransformFileWriter.h"
 #include "itkTransformFileReader.h"
+#include "itkMatrixOffsetTransformBase.h"
+#include "itkNearestNeighborInterpolateImageFunction.h"
+#include "itkCompositeTransform.h"
 #include "../../Version.h"
 
 #include "../../../Metrics/NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkGetImageNoiseFunction.h"
@@ -91,6 +94,7 @@ int main(int argc, char *argv[])
     ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
     ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
     ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
+    ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
     ("nu,n", po::value<double>()->default_value(0), "nu value MSE 1.0")
     ("nuderivative,N", po::value<double>()->default_value(0), "nu MSE derivative 1.0")
     ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm)")
@@ -133,13 +137,17 @@ int main(int argc, char *argv[])
 	("labelkappaderiv",po::value<double>()->default_value(0.0),       "Global kappa weight for label-map derivative")
 	("labelkappavec",  po::value<std::string>()->default_value(""),   "Per-label kappa (value) weights: 'L1:w1,L2:w2,...'")
 	("labelkappaderivvec", po::value<std::string>()->default_value(""),"Per-label kappa (derivative) weights: 'L1:w1,L2:w2,...'")
-	("labelsamples",   po::value<unsigned int>()->default_value(20000),"Samples for label metric")
+	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric percentage of pixels used (0.1 = 10%)")
 	("labelreport",    po::value<int>()->default_value(1),            "Report Dice every N iterations (0 = off)")
 	("snapshotdir",    po::value<std::string>()->default_value("N"), "Directory for iteration snapshots (N = off)")
 	("snapshotevery",  po::value<int>()->default_value(1),            "Save snapshot every N iterations")
 	("snapshotstack",  po::value<bool>()->default_value(false),       "Save full 3D .nii.gz instead of mid-slice PNG")
+	("snapshotgrid",   po::value<bool>()->default_value(false),       "Overlay regular warped pixel-grid on snapshot panels (default off; when off, the real B-spline knot mesh is shown instead)")
+	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels for the deformation grid panel")
 	("version", "Print version and exit")
 	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
+	("modality", po::value<std::string>()->default_value("custom"),
+		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
 	;
 
 	po::variables_map vm;
@@ -154,6 +162,47 @@ int main(int argc, char *argv[])
 	if (vm.count("help") || !vm.count("fixedimage") || !vm.count("movingimage") || !vm.count("outputimage")) {
 		std::cout << desc << "\n";
 		return 1;
+	}
+
+	// ── Modality presets ───────────────────────────────────────────────────────
+	// Apply sensible defaults based on --modality BEFORE reading individual weights.
+	// Any weight explicitly supplied on the command line will override the preset.
+	const std::string MODALITY = vm["modality"].as<std::string>();
+	if (MODALITY == "multimodal") {
+		// Multimodal: MI dominates, NGF adds structural guidance, MSE/NC off
+		if (vm["alpha"].defaulted())            const_cast<po::variable_value&>(vm["alpha"]).value()            = 1.0;
+		if (vm["alphaderivative"].defaulted())  const_cast<po::variable_value&>(vm["alphaderivative"]).value()  = 1.0;
+		if (vm["lambda"].defaulted())           const_cast<po::variable_value&>(vm["lambda"]).value()           = 0.5;
+		if (vm["lambdaderivative"].defaulted()) const_cast<po::variable_value&>(vm["lambdaderivative"]).value() = 0.5;
+		if (vm["nu"].defaulted())               const_cast<po::variable_value&>(vm["nu"]).value()               = 0.0;
+		if (vm["nuderivative"].defaulted())     const_cast<po::variable_value&>(vm["nuderivative"]).value()     = 0.0;
+		if (vm["yota"].defaulted())             const_cast<po::variable_value&>(vm["yota"]).value()             = 0.0;
+		if (vm["yotaderivative"].defaulted())   const_cast<po::variable_value&>(vm["yotaderivative"]).value()   = 0.0;
+		if (vm["rho"].defaulted())              const_cast<po::variable_value&>(vm["rho"]).value()              = 0.0;
+		if (vm["rhoderivative"].defaulted())    const_cast<po::variable_value&>(vm["rhoderivative"]).value()    = 0.0;
+		if (vm["sigma"].defaulted())            const_cast<po::variable_value&>(vm["sigma"]).value()            = 0.0;
+		if (vm["sigmaderivative"].defaulted())  const_cast<po::variable_value&>(vm["sigmaderivative"]).value()  = 0.0;
+		std::cout << "[Modality] multimodal preset: MI(alpha=" << vm["alpha"].as<double>()
+		          << ") + NGF(lambda=" << vm["lambda"].as<double>() << ")" << std::endl;
+	} else if (MODALITY == "singlemodal") {
+		// Singlemodal: MSE + NC complement each other, MI/NGF off
+		if (vm["alpha"].defaulted())            const_cast<po::variable_value&>(vm["alpha"]).value()            = 0.0;
+		if (vm["alphaderivative"].defaulted())  const_cast<po::variable_value&>(vm["alphaderivative"]).value()  = 0.0;
+		if (vm["lambda"].defaulted())           const_cast<po::variable_value&>(vm["lambda"]).value()           = 0.0;
+		if (vm["lambdaderivative"].defaulted()) const_cast<po::variable_value&>(vm["lambdaderivative"]).value() = 0.0;
+		if (vm["nu"].defaulted())               const_cast<po::variable_value&>(vm["nu"]).value()               = 1.0;
+		if (vm["nuderivative"].defaulted())     const_cast<po::variable_value&>(vm["nuderivative"]).value()     = 1.0;
+		if (vm["yota"].defaulted())             const_cast<po::variable_value&>(vm["yota"]).value()             = 0.5;
+		if (vm["yotaderivative"].defaulted())   const_cast<po::variable_value&>(vm["yotaderivative"]).value()   = 0.5;
+		if (vm["rho"].defaulted())              const_cast<po::variable_value&>(vm["rho"]).value()              = 0.0;
+		if (vm["rhoderivative"].defaulted())    const_cast<po::variable_value&>(vm["rhoderivative"]).value()    = 0.0;
+		if (vm["sigma"].defaulted())            const_cast<po::variable_value&>(vm["sigma"]).value()            = 0.0;
+		if (vm["sigmaderivative"].defaulted())  const_cast<po::variable_value&>(vm["sigmaderivative"]).value()  = 0.0;
+		std::cout << "[Modality] singlemodal preset: MSE(nu=" << vm["nu"].as<double>()
+		          << ") + NC(yota=" << vm["yota"].as<double>() << ")" << std::endl;
+	} else if (MODALITY != "custom") {
+		std::cerr << "Error: --modality must be 'multimodal', 'singlemodal', or 'custom', got '" << MODALITY << "'" << std::endl;
+		return EXIT_FAILURE;
 	}
 
 	MetricType::Pointer metric = MetricType::New();
@@ -241,18 +290,21 @@ int main(int argc, char *argv[])
 	const std::string MOVINGLABELMAP  = vm["movinglabelmap"].as<std::string>();
 	const double      LABELKAPPA      = vm["labelkappa"].as<double>();
 	const double      LABELKAPPADERIV = vm["labelkappaderiv"].as<double>();
-	const unsigned int LABELSAMPLES   = vm["labelsamples"].as<unsigned int>();
+	const double LABELSAMPLES   = vm["labelsamples"].as<double>();
 	const int         LABELREPORT     = vm["labelreport"].as<int>();
 	const std::string SNAPSHOTDIR     = vm["snapshotdir"].as<std::string>();
 	const int         SNAPSHOTEVERY   = vm["snapshotevery"].as<int>();
 	const bool        SNAPSHOTSTACK   = vm["snapshotstack"].as<bool>();
+	const bool        SNAPSHOTGRID    = vm["snapshotgrid"].as<bool>();
+	const unsigned int SNAPSHOTGRIDSP  = vm["snapshotgridspacing"].as<unsigned int>();
 
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 
 	// Read label maps
 	typedef itk::Image<short, ImageDimension> LabelImageType;
-	LabelImageType::ConstPointer fixedLabelMap, movingLabelMap;
+	LabelImageType::ConstPointer fixedLabelMap;
+	LabelImageType::ConstPointer movingLabelMap;
 	if (FIXEDLABELMAP != "N" && MOVINGLABELMAP != "N")
 	{
 		typedef itk::ImageFileReader<LabelImageType> LabelReaderType;
@@ -286,7 +338,7 @@ int main(int argc, char *argv[])
 	movingImageReader->Update();
 
 	ImageType::ConstPointer fixedImage = fixedImageReader->GetOutput();
-	ImageType::ConstPointer movingImage = movingImageReader->GetOutput();
+	ImageType::Pointer movingImage = const_cast<ImageType*>(movingImageReader->GetOutput());
 
 	// ── Input validation ──────────────────────────────────────────────────────
 	if (!fixedImage || fixedImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
@@ -353,8 +405,14 @@ int main(int argc, char *argv[])
 				constexpr unsigned int borderNodesPerSide = SplineOrder;
 			const double extension = borderNodesPerSide * GRIDRESOLUTION;
 
-			// 1) shift the origin back by “extension”
-			fixedOrigin[i] = meshorigin[i] - meshMargin - extension;
+			// The domain extends from origin along the direction matrix.
+			// When direction[i][i] < 0 the physical extent goes negative,
+			// so the origin must be shifted *positive* to place border
+			// nodes symmetrically around the anatomy (and vice versa).
+			const double dirSign = meshdirection[i][i] >= 0 ? 1.0 : -1.0;
+
+			// 1) shift the origin "before" the anatomy in its natural direction
+			fixedOrigin[i] = meshorigin[i] - dirSign * (meshMargin + extension);
 
 			// 2) grow the physical size by 2*extension
 			fixedPhysicalDimensions[i] =
@@ -375,7 +433,8 @@ int main(int argc, char *argv[])
 			{
 				std::cout
 				<< "Dim " << i
-				<< " origin = " << fixedOrigin[i]
+				<< " dirSign = " << dirSign
+				<< ", origin = " << fixedOrigin[i]
 				<< ", physSize = " << fixedPhysicalDimensions[i]
 				<< ", meshSize = " << meshSize[i]
 				<< std::endl;
@@ -430,6 +489,7 @@ int main(int argc, char *argv[])
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNGFSpacing(ngf);
+	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNu(NU);
@@ -508,11 +568,85 @@ int main(int argc, char *argv[])
 	optimizer->SetMaximumNumberOfEvaluations(NE);
 	optimizer->SetMaximumNumberOfCorrections(NC);
 
+	// Optional initial linear transform (set when --transformin contains an
+	// affine/rigid/similarity that is used to pre-warp the moving image).
+	typedef itk::MatrixOffsetTransformBase<double, ImageDimension, ImageDimension> GenericLinearTransformType;
+	GenericLinearTransformType::Pointer initialLinearTransform;
+
 	if (TIN != "N")
 	{
+		// Try reading as a B-spline transform first
+		TransformType::Pointer bsplineIn = ReadTransform<TransformType>(TIN);
+		if (bsplineIn)
+		{
+			transform = bsplineIn;
+			registration->SetInitialTransformParameters(transform->GetParameters());
+			std::cout << "[TransformIn] Loaded B-spline transform from " << TIN << std::endl;
+		}
+		else
+		{
+			// Not a B-spline — read as generic transform and pre-warp the moving image
+			itk::TransformBase::Pointer genericTransform = ReadTransformGeneric(TIN);
+			if (!genericTransform)
+			{
+				std::cerr << "Error: could not read transform from " << TIN << std::endl;
+				return EXIT_FAILURE;
+			}
 
-		transform = ReadTransform<TransformType>(TIN);
-		registration->SetInitialTransformParameters(transform->GetParameters());
+			initialLinearTransform =
+			    dynamic_cast<GenericLinearTransformType*>(genericTransform.GetPointer());
+			if (!initialLinearTransform)
+			{
+				std::cerr << "Error: transform in " << TIN
+				          << " is neither a BSplineTransform nor a linear transform (Affine/Rigid/Similarity).\n"
+				          << "  Actual type: " << genericTransform->GetTransformTypeAsString() << std::endl;
+				return EXIT_FAILURE;
+			}
+
+			std::cout << "[TransformIn] Loaded linear transform (" << genericTransform->GetTransformTypeAsString()
+			          << ") from " << TIN << "\n"
+			          << "  Pre-warping moving image and label map before B-spline registration." << std::endl;
+
+			// Pre-warp moving image
+			typedef itk::ResampleImageFilter<ImageType, ImageType> PreWarpFilterType;
+			PreWarpFilterType::Pointer prewarp = PreWarpFilterType::New();
+			prewarp->SetInput(movingImageReader->GetOutput());
+			prewarp->SetTransform(initialLinearTransform);
+			prewarp->SetSize(fixedImage->GetLargestPossibleRegion().GetSize());
+			prewarp->SetOutputOrigin(fixedImage->GetOrigin());
+			prewarp->SetOutputSpacing(fixedImage->GetSpacing());
+			prewarp->SetOutputDirection(fixedImage->GetDirection());
+			prewarp->SetDefaultPixelValue(DFLTPIXELVALUE);
+			prewarp->Update();
+
+			ImageType::Pointer prewarpedMoving = prewarp->GetOutput();
+			prewarpedMoving->DisconnectPipeline();
+			movingImage = prewarpedMoving;
+			registration->SetMovingImage(movingImage);
+
+			// Pre-warp moving label map if provided
+			if (movingLabelMap)
+			{
+				typedef itk::ResampleImageFilter<LabelImageType, LabelImageType> LabelPreWarpType;
+				typedef itk::NearestNeighborInterpolateImageFunction<LabelImageType, double> NNInterpType;
+				LabelPreWarpType::Pointer labelPrewarp = LabelPreWarpType::New();
+				NNInterpType::Pointer nnInterp = NNInterpType::New();
+				labelPrewarp->SetInput(movingLabelMap);
+				labelPrewarp->SetTransform(initialLinearTransform);
+				labelPrewarp->SetInterpolator(nnInterp);
+				labelPrewarp->SetSize(fixedImage->GetLargestPossibleRegion().GetSize());
+				labelPrewarp->SetOutputOrigin(fixedImage->GetOrigin());
+				labelPrewarp->SetOutputSpacing(fixedImage->GetSpacing());
+				labelPrewarp->SetOutputDirection(fixedImage->GetDirection());
+				labelPrewarp->SetDefaultPixelValue(0);
+				labelPrewarp->Update();
+				LabelImageType::Pointer prewarpedLabel = labelPrewarp->GetOutput();
+				prewarpedLabel->DisconnectPipeline();
+				movingLabelMap = prewarpedLabel;
+			}
+
+			std::cout << "  Pre-warping complete." << std::endl;
+		}
 	}
 
 	// if TODO
@@ -548,6 +682,11 @@ int main(int argc, char *argv[])
 		snapObs->SetOutputDirectory(SNAPSHOTDIR);
 		snapObs->SetSaveEveryNIterations(static_cast<unsigned int>(SNAPSHOTEVERY));
 		snapObs->SetSaveStack(SNAPSHOTSTACK);
+		snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
+		snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
+		// When --snapshotgrid is off (the default for B-splines), show the
+		// real B-spline control-point lattice instead of a pixel grid.
+		snapObs->SetShowBSplineMesh(!SNAPSHOTGRID);
 		optimizer->AddObserver(itk::IterationEvent(), snapObs);
 	}
 	// Add a time probe
@@ -584,6 +723,22 @@ int main(int argc, char *argv[])
 
 	transform->SetParameters(registration->GetLastTransformParameters());
 
+	// ── Build the final output transform ──────────────────────────────────────
+	// If a linear pre-warp was used, compose: linear → B-spline
+	typedef itk::CompositeTransform<double, ImageDimension> CompositeTransformType;
+	typedef itk::Transform<double, ImageDimension, ImageDimension> GenericTransformType;
+	typename CompositeTransformType::Pointer compositeTransform;
+	const GenericTransformType* outputTransform = transform.GetPointer();
+
+	if (initialLinearTransform)
+	{
+		compositeTransform = CompositeTransformType::New();
+		compositeTransform->AddTransform(initialLinearTransform);
+		compositeTransform->AddTransform(transform);
+		outputTransform = compositeTransform.GetPointer();
+		std::cout << "[Output] Composing initial linear + B-spline transform." << std::endl;
+	}
+
 	typedef itk::ResampleImageFilter<
 		ImageType,
 		ImageType>
@@ -591,7 +746,7 @@ int main(int argc, char *argv[])
 
 	ResampleFilterType::Pointer resample = ResampleFilterType::New();
 
-	resample->SetTransform(transform);
+	resample->SetTransform(outputTransform);
 	resample->SetInput(movingImageReader->GetOutput());
 
 	resample->SetSize(fixedImage->GetLargestPossibleRegion().GetSize());
@@ -620,21 +775,33 @@ int main(int argc, char *argv[])
 	if (VOUT != "N")
 	{
 		DeformationTransformImageType::Pointer td = DeformationTransformImageType::New();
-		td = TransformToDeformationField<TransformType, ImageType, DeformationTransformImageType>(transform, movingImageReader->GetOutput());
+		if (initialLinearTransform)
+			td = TransformToDeformationField<CompositeTransformType, ImageType, DeformationTransformImageType>(compositeTransform, movingImageReader->GetOutput());
+		else
+			td = TransformToDeformationField<TransformType, ImageType, DeformationTransformImageType>(transform, movingImageReader->GetOutput());
 		WriteDeformationField<DeformationTransformImageType>(VOUT, td);
 	};
 
 	if (TOUT != "N")
 	{
 #if (ITK_VERSION_MAJOR == 4 && ITK_VERSION_MINOR >= 5) || ITK_VERSION_MAJOR > 4
-		itk::TransformFileWriterTemplate<double>::Pointer writer =
+		itk::TransformFileWriterTemplate<double>::Pointer twriter =
 			itk::TransformFileWriterTemplate<double>::New();
 #else
-		itk::TransformFileWriter::Pointer writer = itk::TransformFileWriter::New();
+		itk::TransformFileWriter::Pointer twriter = itk::TransformFileWriter::New();
 #endif
-		writer->SetInput(registration->GetOutput()->Get());
-		writer->SetFileName(TOUT);
-		writer->Update();
+		if (initialLinearTransform)
+		{
+			// Write both transforms so the composite can be reconstructed
+			twriter->SetInput(initialLinearTransform);
+			twriter->AddTransform(registration->GetOutput()->Get());
+		}
+		else
+		{
+			twriter->SetInput(registration->GetOutput()->Get());
+		}
+		twriter->SetFileName(TOUT);
+		twriter->Update();
 	};
 
 	return EXIT_SUCCESS;

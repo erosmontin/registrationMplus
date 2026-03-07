@@ -157,6 +157,14 @@ public:
 	void SetNGFSpacing(const typename TFixedImage::SpacingType& spacing) { m_NGFSpacing = spacing; }
 	typename TFixedImage::SpacingType GetNGFSpacing() const { return m_NGFSpacing; }
 
+	/** When true, the NGF of the moving image is precomputed once and
+	 *  its vector field is resampled each iteration instead of recomputing
+	 *  the gradient from the resampled scalar image.  Faster but approximate
+	 *  (ignores transform-Jacobian rotation of gradient vectors). */
+	itkGetMacro( NGFPrecomputeGradient, bool);
+	itkSetMacro( NGFPrecomputeGradient, bool);
+	itkBooleanMacro( NGFPrecomputeGradient);
+
 	// ── Label-map / ROI metric (kappa term) ──────────────────────────────────
 	/** Integer label pixel type.  Short accommodates up to 32767 structures. */
 	typedef short                                                        LabelPixelType;
@@ -341,6 +349,7 @@ protected:
 	int  m_MainMetricIndex;    // 0=MI,1=NGF,2=MSE,3=NC,4=Label,5=GD,6=NMI
 	bool   m_AutoEstimateEta;
 	bool m_ComputeOverlap;
+	bool m_NGFPrecomputeGradient;
 	unsigned int m_OverlapPadding;
 	double m_FixedImageThreshold;
 	bool   m_UseFixedImageThreshold;

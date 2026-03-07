@@ -186,7 +186,7 @@ inline void WireLabelMaps(MetricPointer & metric, const po::variables_map & vm)
     metric->SetMovingLabelMap(movTmp);
     metric->SetLabelKappa(vm["labelkappa"].template as<double>());
     metric->SetLabelKappaDerivative(vm["labelkappaderiv"].template as<double>());
-    metric->SetLabelNumberOfSamples(vm["labelsamples"].template as<unsigned int>());
+    metric->SetLabelNumberOfSamples(vm["labelsamples"].template as<double>());
 
     const auto kappaVec      = ParseLabelWeights(vm["labelkappavec"].template as<std::string>());
     const auto kappaDerivVec = ParseLabelWeights(vm["labelkappaderivvec"].template as<std::string>());

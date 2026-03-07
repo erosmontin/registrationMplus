@@ -23,6 +23,7 @@
 #include <itkSobelOperator.h>
 #include <itkDerivativeOperator.h>
 #include <itkVectorNeighborhoodOperatorImageFilter.h>
+#include <itkVectorLinearInterpolateImageFunction.h>
 #include <itkZeroFluxNeumannBoundaryCondition.h>
 
 #include "itkMyDefines.h"
@@ -155,6 +156,16 @@ public:
 	itkGetMacro( MovingNoise, double);
 	itkSetMacro( MovingNoise, double);
 
+	/** When true, the gradient of the moving image is computed once during
+	 *  Initialize() and the resulting NGF vector field is resampled by the
+	 *  current transform at every iteration instead of resampling the scalar
+	 *  image and recomputing the gradient from scratch.  This is an
+	 *  approximation (the transform Jacobian is not applied to vectors) but
+	 *  is accurate for small deformations and significantly faster. */
+	itkGetMacro( PrecomputeGradient, bool);
+	itkSetMacro( PrecomputeGradient, bool);
+	itkBooleanMacro( PrecomputeGradient);
+
 
 protected:
   NormalizedGradientFieldImageToImageMetric();
@@ -188,7 +199,18 @@ private:
 
 	double m_FixedNoise;
 	double m_MovingNoise;
-  
+	bool m_PrecomputeGradient;
+
+  /** Precomputed NGF of the moving image in its native space. */
+  typename MovingNGFType::Pointer m_PrecomputedMovingNGF;
+
+  /** Vector resampler used when m_PrecomputeGradient is true. */
+  typedef VectorResampleImageFilter<MovingNGFType, MovingNGFType> VectorResampleType;
+  typename VectorResampleType::Pointer m_VectorResampler;
+
+  /** Update m_MovingNGF by resampling the precomputed NGF. */
+  void UpdatePrecomputedMovingNGF() const;
+
   mutable typename MovingNGFType::Pointer m_CachedGradient;
   mutable TransformParametersType m_CachedParameters;
   mutable TransformParametersType m_CachedValueParameters;

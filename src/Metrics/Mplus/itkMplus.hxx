@@ -69,6 +69,7 @@ namespace itk
 		m_NGFSpacing.Fill(4.0);
 		m_AutoEstimateEta = false;
 		m_RangeDerivatives=0.0;
+		m_NGFPrecomputeGradient = false;
 		m_ComputeOverlap   = true;    // default: compute overlap
 		m_OverlapPadding   = 20;
 		m_FixedImageThreshold   = 0.0;
@@ -469,6 +470,7 @@ namespace itk
 			}
 
 			m_NGF->ReinitializeSeed();
+			m_NGF->SetPrecomputeGradient(this->m_NGFPrecomputeGradient);
 			m_NGF->Initialize();
 		}
 

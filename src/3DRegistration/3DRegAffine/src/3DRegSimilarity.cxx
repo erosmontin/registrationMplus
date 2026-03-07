@@ -113,6 +113,7 @@ int main( int argc, char *argv[] )
 		("nmibins", po::value<int>()->default_value(64), "Number of histogram bins for NMI")
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"),
                              "NGF spacing per dimension (x,y,z)")
+        ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
 							 ("metricoverlap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
 	("fixedlabelmap",  po::value<std::string>()->default_value("N"), "Fixed label map filename (N = none)")
 	("movinglabelmap", po::value<std::string>()->default_value("N"), "Moving label map filename (N = none)")
@@ -120,11 +121,13 @@ int main( int argc, char *argv[] )
 	("labelkappaderiv",po::value<double>()->default_value(0.0),       "Global kappa weight for label-map derivative")
 	("labelkappavec",  po::value<std::string>()->default_value(""),   "Per-label kappa (value) weights: 'L1:w1,L2:w2,...'")
 	("labelkappaderivvec", po::value<std::string>()->default_value(""),"Per-label kappa (derivative) weights: 'L1:w1,L2:w2,...'")
-	("labelsamples",   po::value<unsigned int>()->default_value(20000),"Samples for label metric")
+	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric percentage of pixels used (0.1 = 10%)")
 	("labelreport",    po::value<int>()->default_value(1),            "Report Dice every N iterations (0 = off)")
 	("snapshotdir",    po::value<std::string>()->default_value("N"), "Directory for iteration snapshots (N = off)")
 	("snapshotevery",  po::value<int>()->default_value(1),            "Save snapshot every N iterations")
 	("snapshotstack",  po::value<bool>()->default_value(false),       "Save full 3D .nii.gz instead of mid-slice PNG")
+	("snapshotgrid",   po::value<bool>()->default_value(true),        "Overlay warped grid on snapshot panels (default on)")
+	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels")
 	("version", "Print version and exit")
 	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
 	("modality", po::value<std::string>()->default_value("custom"),
@@ -199,11 +202,13 @@ int main( int argc, char *argv[] )
 	const std::string MOVINGLABELMAP  = vm["movinglabelmap"].as<std::string>();
 	const double      LABELKAPPA      = vm["labelkappa"].as<double>();
 	const double      LABELKAPPADERIV = vm["labelkappaderiv"].as<double>();
-	const unsigned int LABELSAMPLES   = vm["labelsamples"].as<unsigned int>();
+	const double LABELSAMPLES   = vm["labelsamples"].as<double>();
 	const int         LABELREPORT     = vm["labelreport"].as<int>();
 	const std::string SNAPSHOTDIR     = vm["snapshotdir"].as<std::string>();
 	const int         SNAPSHOTEVERY   = vm["snapshotevery"].as<int>();
 	const bool        SNAPSHOTSTACK   = vm["snapshotstack"].as<bool>();
+	const bool        SNAPSHOTGRID    = vm["snapshotgrid"].as<bool>();
+	const unsigned int SNAPSHOTGRIDSP  = vm["snapshotgridspacing"].as<unsigned int>();
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 	typedef itk::Image<short, ImageDimension> LabelImageType;
@@ -462,6 +467,7 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNGFSpacing(ngf);
+	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNu(NU);
@@ -558,6 +564,8 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 		snapObs->SetOutputDirectory(SNAPSHOTDIR);
 		snapObs->SetSaveEveryNIterations(static_cast<unsigned int>(SNAPSHOTEVERY));
 		snapObs->SetSaveStack(SNAPSHOTSTACK);
+		snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
+		snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
 		optimizer->AddObserver(itk::IterationEvent(), snapObs);
 	}
       // Add a time probe
