@@ -1,0 +1,43 @@
+{
+  "description": "Label-driven registration: strong label kappa + light MI",
+  "weights": {
+    "mi": 0.3,
+    "mi_deriv": 0.3,
+    "label": 1.0,
+    "label_deriv": 1.0,
+    "gd": 0.0,
+    "gd_deriv": 0.0,
+    "nmi": 0.0,
+    "nmi_deriv": 0.0
+  },
+  "derivative_mode": 0,
+  "max_iterations": 1000,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 4,
+  "label_maps": {
+    "fixed": "fixedLabels.nii.gz",
+    "moving": "movingLabels.nii.gz",
+    "samples": 20000,
+    "report_every": 5,
+    "per_label_weights": {
+      "1": 1.0,
+      "2": 1.0,
+      "3": 1.0,
+      "4": 1.0,
+      "5": 0.8
+    },
+    "per_label_deriv_weights": {
+      "1": 1.0,
+      "2": 1.0,
+      "3": 1.0,
+      "4": 1.0,
+      "5": 0.8
+    }
+  }
+}

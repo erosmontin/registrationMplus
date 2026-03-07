@@ -1,0 +1,23 @@
+{
+  "algorithm": "Similarity",
+  "description": "Similarity transform: 3 rotations + 3 translations + 1 uniform scale (7 DOF)",
+  "weights": {
+    "mi": 1.0,
+    "mi_deriv": 1.0
+  },
+  "derivative_mode": 0,
+  "max_iterations": 1000,
+  "minimum_step_length": 0.1,
+  "maximum_step_length": 1.0,
+  "relaxation_factor": 0.5,
+  "gradient_magnitude_tolerance": 1e-4,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 2,
+  "notes": "Rigid + isotropic scaling only. Fewer DOF than affine; faster, more robust to outliers. Output transform (.tfm) can be passed directly to 3DRegAffine or 3DRegAffineMultiLevel via -W for warm-starting."
+}

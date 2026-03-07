@@ -288,18 +288,7 @@ NormalizedGradientFieldImageToImageMetric<FI,MI>::GetGradient(const TransformPar
 	while (!iti.IsAtEnd())  {
 		
 		m_Evaluator->Gradient(iout.Value(),iti.Value(),igrad,ifi.Value()); 
-		
-		// evaluating the gradinet manually shows that for some 
-		// reason the sign is wrong - maybe the DerivativeNeighborhoodOperator 
-		// returns the values with an unexpected sign?
-		
-		
-		// Eros Montin update 09/23/25
-		//The sign flip is needed because the ITK derivative operator returns the gradient with a sign opposite. 
-        
-
-		
-		iout.Value() *= -1; 
+		iout.Value() *= -1; // flip sign to match optimizer convention (RSGD maximizer)
 
 		++iti; 
 		++ifi; 

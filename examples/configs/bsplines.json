@@ -1,0 +1,25 @@
+{
+  "algorithm": "BSplines",
+  "description": "Deformable registration using cubic B-spline free-form deformations",
+  "weights": {
+    "mi": 1.0,
+    "mi_deriv": 1.0
+  },
+  "derivative_mode": 0,
+  "grid_spacing": 50.0,
+  "mesh_margin": 0.0,
+  "max_iterations": 1000,
+  "cost_function_convergence_factor": 1e12,
+  "projected_gradient_tolerance": 1e-5,
+  "number_of_evaluations": 500,
+  "number_of_corrections": 5,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 2,
+  "notes": "Deformable non-rigid registration with B-spline control points. Most flexible, requires more computation. Uses LBFGS-B optimizer."
+}

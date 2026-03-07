@@ -1,0 +1,23 @@
+{
+  "description": "MI-only registration (all other metrics off)",
+  "weights": {
+    "mi": 1.0,
+    "mi_deriv": 1.0,
+    "ngf": 0.0,
+    "mse": 0.0,
+    "nc": 0.0,
+    "label": 0.0,
+    "gd": 0.0,
+    "nmi": 0.0
+  },
+  "derivative_mode": 0,
+  "max_iterations": 1000,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 2
+}

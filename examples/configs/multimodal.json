@@ -1,0 +1,30 @@
+{
+  "description": "Multimodal registration: MI + NGF + MSE",
+  "weights": {
+    "mi": 1.0,
+    "mi_deriv": 1.0,
+    "ngf": 0.5,
+    "ngf_deriv": 0.5,
+    "mse": 0.2,
+    "mse_deriv": 0.2,
+    "nc": 0.0,
+    "nc_deriv": 0.0,
+    "gd": 0.0,
+    "gd_deriv": 0.0,
+    "nmi": 0.0,
+    "nmi_deriv": 0.0
+  },
+  "derivative_mode": 0,
+  "max_iterations": 1000,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "ngf_spacing": "4,4,4",
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64,
+    "ngf_percentage": 0.1,
+    "mse_percentage": 0.1
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 4
+}

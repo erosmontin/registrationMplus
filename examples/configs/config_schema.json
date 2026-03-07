@@ -1,0 +1,289 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mplus Registration Configuration",
+  "description": "Configuration schema for multi-metric image registration using itkMplus (v6.0). Field names map to CLI option long names.",
+  "type": "object",
+  "required": ["weights"],
+  "properties": {
+    "algorithm": {
+      "type": "string",
+      "enum": ["Similarity", "Affine", "AffineMultiLevel", "BSplines"],
+      "description": "Registration algorithm / executable to use"
+    },
+    "weights": {
+      "type": "object",
+      "description": "Metric component weights (value and derivative)",
+      "properties": {
+        "mi": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Mutual Information weight (--alpha). Default: 1.0"
+        },
+        "mi_deriv": {
+          "type": "number",
+          "description": "MI derivative weight (--alphaderivative). Defaults to mi value"
+        },
+        "ngf": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Normalized Gradient Field weight (--lambda). Default: 0.0"
+        },
+        "ngf_deriv": {
+          "type": "number",
+          "description": "NGF derivative weight (--lambdaderivative). Defaults to 0"
+        },
+        "mse": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Mean Squared Error weight (--nu). Default: 0.0"
+        },
+        "mse_deriv": {
+          "type": "number",
+          "description": "MSE derivative weight (--nuderivative). Defaults to mse value"
+        },
+        "nc": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Normalized Correlation weight (--yota). Default: 0.0"
+        },
+        "nc_deriv": {
+          "type": "number",
+          "description": "NC derivative weight (--yotaderivative). Defaults to 0"
+        },
+        "label": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Label signed-distance metric weight (--labelkappa). Default: 0.0"
+        },
+        "label_deriv": {
+          "type": "number",
+          "description": "Label derivative weight (--labelkappaderiv). Defaults to 0"
+        },
+        "gd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Gradient Difference weight (--rho). Default: 0.0. Sobel-based edge metric; best for singlemodal structural alignment. No subsampling."
+        },
+        "gd_deriv": {
+          "type": "number",
+          "description": "GD derivative weight (--rhoderivative). Default: 0.0"
+        },
+        "nmi": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Normalized Mutual Information weight (--sigma). Default: 0.0. Histogram-based; robust for multimodal registration. No subsampling."
+        },
+        "nmi_deriv": {
+          "type": "number",
+          "description": "NMI derivative weight (--sigmaderivative). Default: 0.0"
+        }
+      }
+    },
+    "modality": {
+      "type": "string",
+      "enum": ["custom", "multimodal", "singlemodal"],
+      "description": "Preset modality (--modality, Similarity only). 'multimodal' sets MI+NGF defaults; 'singlemodal' sets MSE+NC defaults; 'custom' uses manual weights. Default: custom"
+    },
+    "derivative_mode": {
+      "type": "integer",
+      "enum": [0, 1, 2],
+      "description": "Derivative merge mode (--derivativemode): 0=consistent weighted sum (default), 1=normalised (RSGD only, blocked for BSplines), 2=main-metric adaptive"
+    },
+    "main_metric": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3, 4, 5, 6],
+      "description": "Main metric index for mode 2 (--mainmetric): 0=MI, 1=NGF, 2=MSE, 3=NC, 4=Label, 5=GD, 6=NMI. Default: 0"
+    },
+    "grid_spacing": {
+      "type": "number",
+      "minimum": 1,
+      "description": "B-spline control point spacing in mm (--gridresolution). Default: 50.0. Only for BSplines."
+    },
+    "mesh_margin": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Extra margin (mm) around image domain for B-spline mesh (--meshmarginsize). Default: 0.0"
+    },
+    "num_levels": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "description": "Number of multi-resolution levels (--numberoflevels). Only for AffineMultiLevel. Default: 2"
+    },
+    "max_iterations": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum optimizer iterations (--maxnumberofiterations). Default: 1000"
+    },
+    "minimum_step_length": {
+      "type": "number",
+      "minimum": 0,
+      "description": "RSGD minimum step length (--minimumsteplength). Default: 0.1. Similarity/Affine/AffineMultiLevel only."
+    },
+    "maximum_step_length": {
+      "type": "number",
+      "minimum": 0,
+      "description": "RSGD maximum step length (--maximumsteplength). Default: 1.0. Similarity/Affine/AffineMultiLevel only."
+    },
+    "relaxation_factor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "RSGD relaxation factor (--relaxationfactor). Default: 0.5"
+    },
+    "gradient_magnitude_tolerance": {
+      "type": "number",
+      "minimum": 0,
+      "description": "RSGD gradient magnitude tolerance (--gradientmagnitudetolerance). Default: 1e-4"
+    },
+    "cost_function_convergence_factor": {
+      "type": "number",
+      "minimum": 0,
+      "description": "LBFGS-B convergence factor (--costfunctionconvergencefactor). Default: 1e12. BSplines only."
+    },
+    "projected_gradient_tolerance": {
+      "type": "number",
+      "minimum": 0,
+      "description": "LBFGS-B projected gradient tolerance (--projectedgradienttolerance). Default: 1e-5. BSplines only."
+    },
+    "number_of_evaluations": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum function evaluations (--numberofevaluations). Default: 500. BSplines only."
+    },
+    "number_of_corrections": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "LBFGS-B memory size (--numberofcorrections). Default: 5. BSplines only."
+    },
+    "fixed_eta": {
+      "type": "number",
+      "description": "NGF noise parameter for fixed image (--etavaluefixed). -1=auto. Default: -1"
+    },
+    "moving_eta": {
+      "type": "number",
+      "description": "NGF noise parameter for moving image (--etavaluemoving). -1=auto. Default: -1"
+    },
+    "ngf_evaluator": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3, 4],
+      "description": "NGF kernel (--NGFevaluator): 0=scalar, 1=cross, 2=scdelta, 3=delta, 4=delta2. Default: 0"
+    },
+    "ngf_spacing": {
+      "type": "string",
+      "pattern": "^[0-9.]+,[0-9.]+,[0-9.]+$",
+      "description": "NGF finite-difference spacing per axis in mm (--ngfspacing). Default: '4,4,4'"
+    },
+    "sampling": {
+      "type": "object",
+      "description": "Per-metric voxel sampling fractions",
+      "properties": {
+        "mattes_percentage": {
+          "type": "number", "minimum": 0, "maximum": 1,
+          "description": "MI sampling fraction (--mattespercentage). Default: 0.1"
+        },
+        "mattes_bins": {
+          "type": "integer", "minimum": 2,
+          "description": "MI histogram bins (--mattesnumberofbins). Default: 64"
+        },
+        "ngf_percentage": {
+          "type": "number", "minimum": 0, "maximum": 1,
+          "description": "NGF sampling fraction (--ngfpercentage). Default: 0.1"
+        },
+        "mse_percentage": {
+          "type": "number", "minimum": 0, "maximum": 1,
+          "description": "MSE sampling fraction (--msepercentage). Default: 0.1"
+        },
+        "nc_percentage": {
+          "type": "number", "minimum": 0, "maximum": 1,
+          "description": "NC sampling fraction (--ncpercentage). Default: 0.1"
+        },
+        "nmi_bins": {
+          "type": "integer", "minimum": 2,
+          "description": "NMI histogram bins (--nmibins). Default: 64. Only used when nmi (--sigma) > 0."
+        }
+      }
+    },
+    "overlap_padding": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Overlap padding in voxels (--overlappadding). Default: 20"
+    },
+    "metric_overlap": {
+      "type": "boolean",
+      "description": "Compute overlap between fixed and moving image (--metricoverlap). Default: true"
+    },
+    "fixed_image_threshold": {
+      "type": "number",
+      "description": "Only sample fixed voxels above this value (--fixedimagethreshold). Default: -99999999 (disabled)"
+    },
+    "number_of_threads": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "CPU threads (--numberofthreads). Default: 2"
+    },
+    "label_maps": {
+      "type": "object",
+      "description": "Label map / ROI settings",
+      "properties": {
+        "fixed": {
+          "type": "string",
+          "description": "Fixed label map filename (--fixedlabelmap). 'N'=none"
+        },
+        "moving": {
+          "type": "string",
+          "description": "Moving label map filename (--movinglabelmap). 'N'=none"
+        },
+        "samples": {
+          "type": "integer", "minimum": 1,
+          "description": "Voxel samples for label metric (--labelsamples). Default: 20000"
+        },
+        "report_every": {
+          "type": "integer", "minimum": 0,
+          "description": "Print Dice every N iterations (--labelreport). 0=off. Default: 1"
+        },
+        "per_label_weights": {
+          "type": "object",
+          "description": "Per-label kappa weights (--labelkappavec). Keys are label integers.",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        },
+        "per_label_deriv_weights": {
+          "type": "object",
+          "description": "Per-label derivative weights (--labelkappaderivvec).",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "snapshots": {
+      "type": "object",
+      "description": "Iteration snapshot settings",
+      "properties": {
+        "directory": {
+          "type": "string",
+          "description": "Output directory (--snapshotdir). 'N'=off"
+        },
+        "every": {
+          "type": "integer", "minimum": 1,
+          "description": "Save every N iterations (--snapshotevery). Default: 1"
+        },
+        "stack": {
+          "type": "boolean",
+          "description": "true=full 3D .nii.gz, false=mid-axial PNG (--snapshotstack). Default: false"
+        }
+      }
+    },
+    "subtype": {
+      "type": "string",
+      "enum": ["affine", "translation", "rotation", "scaling"],
+      "description": "Transform sub-type (--subtype). Affine only. Default: 'affine'"
+    },
+    "transform_in": {
+      "type": "string",
+      "description": "Path to an existing transform file to initialise from (--transformin / -W). Accepts any linear ITK transform (e.g. Similarity3DTransform, AffineTransform); auto-converts when the type differs from the executable's native transform. Default: 'N' (identity)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-text description (not passed to executable)"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Singlemodal registration using Gradient Difference (GD). Useful for structural alignment where edge information dominates. GD uses Sobel-based gradient differences and does not require voxel subsampling.",
+  "weights": {
+    "mi": 0.0,
+    "mi_deriv": 0.0,
+    "ngf": 0.0,
+    "ngf_deriv": 0.0,
+    "mse": 0.0,
+    "mse_deriv": 0.0,
+    "nc": 0.0,
+    "nc_deriv": 0.0,
+    "gd": 1.0,
+    "gd_deriv": 1.0,
+    "nmi": 0.0,
+    "nmi_deriv": 0.0
+  },
+  "derivative_mode": 0,
+  "main_metric": 5,
+  "max_iterations": 1000,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 4,
+  "notes": "GD (--rho / --rhoderivative) is a Sobel-gradient-based metric. It works best on singlemodal images with well-defined edges (e.g. CT-CT, MRI-MRI). No random subsampling: all voxels are used. Set --mainmetric 5 when using derivativemode 2 to scale gradients to the GD reference."
+}

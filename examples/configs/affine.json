@@ -1,0 +1,24 @@
+{
+  "algorithm": "Affine",
+  "description": "Full linear alignment (12 DOF): rotation, translation, scaling, shearing",
+  "weights": {
+    "mi": 1.0,
+    "mi_deriv": 1.0
+  },
+  "derivative_mode": 0,
+  "max_iterations": 1000,
+  "minimum_step_length": 0.1,
+  "maximum_step_length": 1.0,
+  "relaxation_factor": 0.5,
+  "gradient_magnitude_tolerance": 1e-4,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 2,
+  "transform_in": "N",
+  "notes": "Fast alignment for rough initialization. Uses RSGD optimizer. The -W / transform_in flag accepts any linear ITK transform (e.g. Similarity3DTransform from 3DRegSimilarity) and auto-converts it to AffineTransform."
+}

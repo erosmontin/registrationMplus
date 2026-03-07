@@ -1,0 +1,30 @@
+{
+  "description": "Multimodal registration using NMI + MI. NMI is a histogram-based metric normalized for robustness across different acquisition protocols and modalities. Combine with standard MI for reinforced entropy-based alignment.",
+  "weights": {
+    "mi": 0.5,
+    "mi_deriv": 0.5,
+    "ngf": 0.0,
+    "ngf_deriv": 0.0,
+    "mse": 0.0,
+    "mse_deriv": 0.0,
+    "nc": 0.0,
+    "nc_deriv": 0.0,
+    "gd": 0.0,
+    "gd_deriv": 0.0,
+    "nmi": 1.0,
+    "nmi_deriv": 1.0
+  },
+  "derivative_mode": 0,
+  "main_metric": 6,
+  "max_iterations": 1000,
+  "fixed_eta": -1,
+  "moving_eta": -1,
+  "sampling": {
+    "mattes_percentage": 0.1,
+    "mattes_bins": 64,
+    "nmi_bins": 64
+  },
+  "overlap_padding": 20,
+  "number_of_threads": 4,
+  "notes": "NMI (--sigma / --sigmaderivative) uses a joint histogram; bin count is set by --nmibins (default 64). NMI does not use random subsampling. Prefer this over standard MI when the intensity relationship between modalities is non-linear or when normalisation robustness is important. Set --mainmetric 6 with derivativemode 2 to scale all gradients to the NMI reference."
+}
