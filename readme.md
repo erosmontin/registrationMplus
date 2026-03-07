@@ -17,7 +17,7 @@ For a detailed description of the method, please refer to our article:
 [Publication list](https://biodimensional.com/)
 
 
-
+![Bspline Registration example](img/registration.gif)
 ## Features
 
 - **Multi-metric registration:** Combines MI, NGF, MSE, NC, GD, and NMI to optimise registration accuracy.
