@@ -558,8 +558,10 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 		lo->SetEvaluateEveryNIterations(static_cast<unsigned int>(LABELREPORT));
 		optimizer->AddObserver(itk::IterationEvent(), lo);
 	}
+	using SnapObsType = IterationSnapshotObserver<TransformType, FixedImageType>;
+	SnapObsType::Pointer snapObs;
 	if (SNAPSHOTDIR != "N") {
-		auto snapObs = IterationSnapshotObserver<TransformType, FixedImageType>::New();
+		snapObs = SnapObsType::New();
 		snapObs->SetFixedImage(fixedImage);
 		snapObs->SetMovingImage(movingImage);
 		snapObs->SetTransform(transform);
@@ -568,6 +570,18 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 		snapObs->SetSaveStack(SNAPSHOTSTACK);
 		snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
 		snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
+		snapObs->SetMetricValuesGetter([metric]() -> std::map<std::string,double> {
+			return {
+				{"Total", metric->GetLastValTotal()},
+				{"MI",    metric->GetLastValMI()},
+				{"NGF",   metric->GetLastValNGF()},
+				{"MSE",   metric->GetLastValMSE()},
+				{"NC",    metric->GetLastValNC()},
+				{"GD",    metric->GetLastValGD()},
+				{"NMI",   metric->GetLastValNMI()},
+				{"Label", metric->GetLastValLabel()},
+			};
+		});
 		optimizer->AddObserver(itk::IterationEvent(), snapObs);
 	}
       // Add a time probe
@@ -594,6 +608,8 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 		std::cerr << err << std::endl;
 		return EXIT_FAILURE;
 	}
+
+	if (snapObs) snapObs->FinalizeConvergencePlot();
 
   // Report the time and memory taken by the registration
   chronometer.Report(std::cout);

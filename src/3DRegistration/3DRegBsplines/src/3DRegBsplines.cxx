@@ -683,8 +683,10 @@ int main(int argc, char *argv[])
 		labelObs->SetEvaluateEveryNIterations(static_cast<unsigned int>(LABELREPORT));
 		optimizer->AddObserver(itk::IterationEvent(), labelObs);
 	}
+	using SnapObsType = IterationSnapshotObserver<TransformType, ImageType>;
+	SnapObsType::Pointer snapObs;
 	if (SNAPSHOTDIR != "N") {
-		auto snapObs = IterationSnapshotObserver<TransformType, ImageType>::New();
+		snapObs = SnapObsType::New();
 		snapObs->SetFixedImage(fixedImage);
 		snapObs->SetMovingImage(movingImage);
 		snapObs->SetTransform(transform);
@@ -696,6 +698,18 @@ int main(int argc, char *argv[])
 		// When --snapshotgrid is off (the default for B-splines), show the
 		// real B-spline control-point lattice instead of a pixel grid.
 		snapObs->SetShowBSplineMesh(!SNAPSHOTGRID);
+		snapObs->SetMetricValuesGetter([metric]() -> std::map<std::string,double> {
+			return {
+				{"Total", metric->GetLastValTotal()},
+				{"MI",    metric->GetLastValMI()},
+				{"NGF",   metric->GetLastValNGF()},
+				{"MSE",   metric->GetLastValMSE()},
+				{"NC",    metric->GetLastValNC()},
+				{"GD",    metric->GetLastValGD()},
+				{"NMI",   metric->GetLastValNMI()},
+				{"Label", metric->GetLastValLabel()},
+			};
+		});
 		optimizer->AddObserver(itk::IterationEvent(), snapObs);
 	}
 	// Add a time probe
@@ -725,6 +739,8 @@ int main(int argc, char *argv[])
 		std::cerr << err << std::endl;
 		return EXIT_FAILURE;
 	}
+
+	if (snapObs) snapObs->FinalizeConvergencePlot();
 
 	// Report the time and memory taken by the registration
 	chronometer.Report(std::cout);

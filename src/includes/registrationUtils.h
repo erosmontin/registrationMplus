@@ -5,6 +5,8 @@
 #include <iomanip>                       // << for std::setprecision
 
 #include <iostream>
+#include <functional>
+#include <fstream>
 
 class LBFGSBOptimizeCommandIterationUpdate : public itk::Command
 {
@@ -530,10 +532,123 @@ public:
      *  Default: false. */
     void SetShowBSplineMesh(bool b)                    { m_ShowBSplineMesh = b; }
 
+    /** Provide a callback that returns a name→value map of per-sub-metric
+     *  values for the current iteration.  Called at every snapshot; the map
+     *  is written to a CSV file (metrics.csv) inside the output directory. */
+    void SetMetricValuesGetter(std::function<std::map<std::string,double>()> fn)
+    { m_MetricGetter = fn; }
+
+    /** Called once after optimization completes.  Writes convergence.png
+     *  into the snapshot directory using accumulated history. */
+    void FinalizeConvergencePlot() const
+    {
+        if (m_OutputDir.empty() || m_IterHistory.empty() || m_SeriesNames.empty()) return;
+
+        const int W = 800, H = 400;
+        const int padL = 60, padR = 20, padT = 30, padB = 50;
+        const int plotW = W - padL - padR;
+        const int plotH = H - padT - padB;
+
+        // White canvas
+        auto canvas = RGBSliceType::New();
+        typename RGBSliceType::IndexType si0; si0.Fill(0);
+        typename RGBSliceType::SizeType  sz0; sz0[0] = W; sz0[1] = H;
+        typename RGBSliceType::RegionType reg0; reg0.SetIndex(si0); reg0.SetSize(sz0);
+        canvas->SetRegions(reg0);
+        canvas->Allocate();
+        RGBPixelType white; white.SetRed(255); white.SetGreen(255); white.SetBlue(255);
+        canvas->FillBuffer(white);
+
+        // Axes
+        DrawLineRGB(canvas.GetPointer(), W, H, padL, padT, padL, padT+plotH, 0, 0, 0);
+        DrawLineRGB(canvas.GetPointer(), W, H, padL, padT+plotH, padL+plotW, padT+plotH, 0, 0, 0);
+
+        // Find global y range
+        double vMin =  std::numeric_limits<double>::max();
+        double vMax = -std::numeric_limits<double>::max();
+        for (const auto& sv : m_SeriesValues)
+            for (double v : sv) { if (v < vMin) vMin = v; if (v > vMax) vMax = v; }
+        if (vMax <= vMin) vMax = vMin + 1.0;
+
+        const double iterRange = std::max(1.0,
+            static_cast<double>(m_IterHistory.back() - m_IterHistory.front()));
+        const double vRange = vMax - vMin;
+
+        // Color palette per series (C++14-safe, no structured bindings)
+        struct RGB3 { unsigned char r, g, b; };
+        const RGB3 palette[] = {
+            {220,  20,  20},  // red     (Total)
+            {  0, 180,   0},  // green   (MI)
+            {  0, 100, 255},  // blue    (NGF)
+            {255, 140,   0},  // orange  (MSE)
+            {170,   0, 220},  // purple  (NC)
+            {  0, 200, 200},  // cyan    (GD)
+            {200,  20, 200},  // magenta (NMI)
+            {100, 180,  30},  // lime    (Label)
+        };
+        const int nPal = static_cast<int>(sizeof(palette) / sizeof(palette[0]));
+
+        for (size_t s = 0; s < m_SeriesValues.size(); ++s)
+        {
+            const auto& S = m_SeriesValues[s];
+            if (S.size() < 2) continue;
+            const RGB3& c = palette[static_cast<int>(s) % nPal];
+
+            // Draw line series
+            for (size_t j = 1; j < S.size(); ++j)
+            {
+                int x0 = padL + static_cast<int>(
+                    (m_IterHistory[j-1] - m_IterHistory[0]) / iterRange * plotW);
+                int y0 = padT + plotH - static_cast<int>(
+                    (S[j-1] - vMin) / vRange * plotH);
+                int x1 = padL + static_cast<int>(
+                    (m_IterHistory[j] - m_IterHistory[0]) / iterRange * plotW);
+                int y1 = padT + plotH - static_cast<int>(
+                    (S[j] - vMin) / vRange * plotH);
+                // Draw 2-pixel-thick line
+                DrawLineRGB(canvas.GetPointer(), W, H, x0, y0, x1, y1, c.r, c.g, c.b);
+                DrawLineRGB(canvas.GetPointer(), W, H, x0, y0+1, x1, y1+1, c.r, c.g, c.b);
+            }
+
+            // Legend swatch (3-pixel-thick horizontal line)
+            const int swX = padL + plotW - 130;
+            const int swY = padT + 8 + static_cast<int>(s) * 14;
+            for (int dy = 0; dy < 3; ++dy)
+                DrawLineRGB(canvas.GetPointer(), W, H,
+                            swX, swY+dy, swX+22, swY+dy, c.r, c.g, c.b);
+        }
+
+        // Axis tick marks (5 ticks each)
+        for (int t = 0; t <= 4; ++t)
+        {
+            int y = padT + plotH - t * plotH / 4;
+            DrawLineRGB(canvas.GetPointer(), W, H, padL-5, y, padL, y, 0, 0, 0);
+            int x = padL + t * plotW / 4;
+            DrawLineRGB(canvas.GetPointer(), W, H, x, padT+plotH, x, padT+plotH+5, 0, 0, 0);
+        }
+
+        const std::string plotPath = m_OutputDir + "/convergence.png";
+        using PW = itk::ImageFileWriter<RGBSliceType>;
+        auto pw = PW::New();
+        pw->SetFileName(plotPath);
+        pw->SetInput(canvas);
+        try
+        {
+            pw->Update();
+            std::cout << "[Snapshot] Convergence plot saved: " << plotPath << std::endl;
+        }
+        catch (const std::exception& ex)
+        {
+            std::cerr << "[Snapshot] Warning: could not save convergence plot: "
+                      << ex.what() << std::endl;
+        }
+    }
+
 protected:
     IterationSnapshotObserver()
         : m_Every(1), m_SaveStack(false), m_ShowGrid(true),
-          m_GridSpacing(20), m_ShowBSplineMesh(false), m_IterCount(0) {}
+          m_GridSpacing(20), m_ShowBSplineMesh(false), m_IterCount(0),
+          m_CSVHeaderWritten(false) {}
 
 private:
     typename TImage::ConstPointer      m_FixedImage;
@@ -546,6 +661,13 @@ private:
     unsigned int                       m_GridSpacing;
     bool                               m_ShowBSplineMesh;
     unsigned long                      m_IterCount;
+
+    // ── per-metric value logging ──────────────────────────────────────────
+    std::function<std::map<std::string,double>()> m_MetricGetter;
+    std::vector<unsigned long>                    m_IterHistory;
+    std::vector<std::string>                      m_SeriesNames;
+    std::vector<std::vector<double>>              m_SeriesValues;  // [series][snapshot]
+    bool                                          m_CSVHeaderWritten;
 
     // ── helpers ──────────────────────────────────────────────────────────
 
@@ -1080,6 +1202,47 @@ public:
                 w->SetFileName(fn.str());
                 w->SetInput(tiler->GetOutput());
                 w->Update();
+            }
+
+            // ── log per-sub-metric values ─────────────────────────────────────
+            if (m_MetricGetter)
+            {
+                auto vals = m_MetricGetter();
+
+                // First call: build series list and write CSV header
+                if (!m_CSVHeaderWritten)
+                {
+                    for (const auto& kv : vals) m_SeriesNames.push_back(kv.first);
+                    m_SeriesValues.resize(m_SeriesNames.size());
+                    std::ofstream hdr(m_OutputDir + "/metrics.csv");
+                    hdr << "iteration";
+                    for (const auto& n : m_SeriesNames) hdr << "," << n;
+                    hdr << "\n";
+                    m_CSVHeaderWritten = true;
+                }
+
+                // Append row to CSV
+                m_IterHistory.push_back(m_IterCount);
+                {
+                    std::ofstream csv(m_OutputDir + "/metrics.csv", std::ios::app);
+                    csv << m_IterCount;
+                    for (size_t i = 0; i < m_SeriesNames.size(); ++i)
+                    {
+                        double v = 0.0;
+                        auto it2 = vals.find(m_SeriesNames[i]);
+                        if (it2 != vals.end()) v = it2->second;
+                        csv << "," << std::setprecision(10) << v;
+                        if (i < m_SeriesValues.size())
+                            m_SeriesValues[i].push_back(v);
+                    }
+                    csv << "\n";
+                }
+
+                // Print to stdout
+                std::cout << "[Metrics] iter " << m_IterCount;
+                for (const auto& kv : vals)
+                    std::cout << "  " << kv.first << "=" << std::setprecision(6) << kv.second;
+                std::cout << std::endl;
             }
         }
         catch (const itk::ExceptionObject& ex)

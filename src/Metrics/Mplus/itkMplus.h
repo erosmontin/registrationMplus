@@ -94,6 +94,16 @@ public:
 	itkSetMacro( NMIBinNumbers, int);
 	itkGetMacro( NMIBinNumbers, int);
 
+	// ── Cached per-sub-metric values from last evaluation (weighted contributions) ─
+	itkGetMacro( LastValMI,    double);
+	itkGetMacro( LastValNGF,   double);
+	itkGetMacro( LastValMSE,   double);
+	itkGetMacro( LastValNC,    double);
+	itkGetMacro( LastValGD,    double);
+	itkGetMacro( LastValNMI,   double);
+	itkGetMacro( LastValLabel, double);
+	itkGetMacro( LastValTotal, double);
+
 
 	itkGetMacro( FixedEta, double);
 	itkSetMacro( FixedEta, double);
@@ -357,6 +367,18 @@ protected:
 	/** Cached per-metric derivative-norm scale factors (set in GetDerivative mode 2,
 	 *  consumed in GetValue mode 2 for value/derivative consistency). */
 	mutable double m_ScaleMA, m_ScaleNGF, m_ScaleMSE, m_ScaleNC, m_ScaleLabel, m_ScaleGD, m_ScaleNMI;
+
+	/** Cached weighted per-sub-metric contributions from the last GetValue /
+	 *  GetValueAndDerivative call. Updated every evaluation — zero-overhead since
+	 *  the values are already computed as part of the normal metric evaluation. */
+	mutable double m_LastValMI;
+	mutable double m_LastValNGF;
+	mutable double m_LastValMSE;
+	mutable double m_LastValNC;
+	mutable double m_LastValGD;
+	mutable double m_LastValNMI;
+	mutable double m_LastValLabel;
+	mutable double m_LastValTotal;
 
 	// ── label metric members ──────────────────────────────────────────────────
 	LabelImageConstPointer  m_FixedLabelMap;

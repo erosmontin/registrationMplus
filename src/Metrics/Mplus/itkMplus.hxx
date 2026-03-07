@@ -84,6 +84,16 @@ namespace itk
 		m_LabelKappa           = 0.0;
 		m_LabelKappaDerivative = 0.0;
 		m_LabelNumberOfSamples = 20000;
+
+		// per-sub-metric cached values
+		m_LastValMI    = 0.0;
+		m_LastValNGF   = 0.0;
+		m_LastValMSE   = 0.0;
+		m_LastValNC    = 0.0;
+		m_LastValGD    = 0.0;
+		m_LastValNMI   = 0.0;
+		m_LastValLabel = 0.0;
+		m_LastValTotal = 0.0;
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -542,19 +552,32 @@ namespace itk
 		if (this->m_Sigma != 0.0)
 			g = this->GetNMIValue(parameters);
 
+		// Cache per-sub-metric weighted contributions (pre mode-2 scaling)
+		this->m_LastValMI    = a;
+		this->m_LastValNGF   = b;
+		this->m_LastValMSE   = c;
+		this->m_LastValGD    = d;
+		this->m_LastValNC    = e;
+		this->m_LastValLabel = f;
+		this->m_LastValNMI   = g;
+
 		if (this->m_DerivativeMode == 2)
 		{
 			// Mode 2: apply the same per-component scale factors cached by
 			// GetDerivative() so that value and gradient stay consistent.
-			return this->m_ScaleMA    * a
+			const double total2 = this->m_ScaleMA    * a
 			     + this->m_ScaleNGF   * b
 			     + this->m_ScaleMSE   * c
 			     + this->m_ScaleGD    * d
 			     + this->m_ScaleNC    * e
 			     + this->m_ScaleLabel * f
 			     + this->m_ScaleNMI   * g;
+			this->m_LastValTotal = total2;
+			return total2;
 		}
-		return a + b + c + d + e + f + g;
+		const double total0 = a + b + c + d + e + f + g;
+		this->m_LastValTotal = total0;
+		return total0;
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -1003,6 +1026,19 @@ namespace itk
 			rawValG = m_NMI->GetValue(parameters);
 		else if (this->m_SigmaDerivative != 0.0)
 			m_NMI->GetDerivative(parameters, rawDerG);
+
+		// ── Cache weighted per-sub-metric contributions ───────────────────
+		this->m_LastValMI    = this->m_Alpha  * rawValA;
+		this->m_LastValNGF   = this->m_Lambda * rawValB;
+		this->m_LastValMSE   = this->m_Nu     * rawValC;
+		this->m_LastValGD    = this->m_Rho    * rawValD;
+		this->m_LastValNC    = this->m_Yota   * rawValE;
+		this->m_LastValLabel = this->m_LabelKappa * rawValF;
+		this->m_LastValNMI   = this->m_Sigma  * rawValG;
+		this->m_LastValTotal = this->m_LastValMI + this->m_LastValNGF
+		                     + this->m_LastValMSE + this->m_LastValGD
+		                     + this->m_LastValNC  + this->m_LastValLabel
+		                     + this->m_LastValNMI;
 
 		// ── Combine derivatives and value ────────────────────────────────
 		if (this->m_DerivativeMode == 1)
