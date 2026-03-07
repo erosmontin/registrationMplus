@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
 	("snapshotgrid",   po::value<bool>()->default_value(false),       "Overlay regular warped pixel-grid on snapshot panels (default off; when off, the real B-spline knot mesh is shown instead)")
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels for the deformation grid panel")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(0),
+	("overlappadding", po::value<unsigned int>()->default_value(1),
 		"Number of B-spline control points outside the image domain per side "
 		"(min = spline order = 3). Higher values give more deformation support at image borders.")
 	("metricpadding", po::value<unsigned int>()->default_value(0), "Metric overlap padding in voxels (default 20)")
