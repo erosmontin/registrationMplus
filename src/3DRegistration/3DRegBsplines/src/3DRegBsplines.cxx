@@ -145,7 +145,10 @@ int main(int argc, char *argv[])
 	("snapshotgrid",   po::value<bool>()->default_value(false),       "Overlay regular warped pixel-grid on snapshot panels (default off; when off, the real B-spline knot mesh is shown instead)")
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels for the deformation grid panel")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
+	("overlappadding", po::value<unsigned int>()->default_value(0),
+		"Number of B-spline control points outside the image domain per side "
+		"(min = spline order = 3). Higher values give more deformation support at image borders.")
+	("metricpadding", po::value<unsigned int>()->default_value(0), "Metric overlap padding in voxels (default 20)")
 	("modality", po::value<std::string>()->default_value("custom"),
 		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
 	;
@@ -401,8 +404,12 @@ int main(int argc, char *argv[])
 
 	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
-				// correlate the number of extra nodes to the spline order:
-				constexpr unsigned int borderNodesPerSide = SplineOrder;
+			// Number of extra B-spline control points outside the image domain
+			// per side.  ITK internally handles the SplineOrder border
+			// coefficients; this setting only controls how far the domain
+			// extends beyond the anatomy for better edge deformation.
+			const unsigned int borderNodesPerSide =
+				vm["overlappadding"].as<unsigned int>();
 			const double extension = borderNodesPerSide * GRIDRESOLUTION;
 
 			// The domain extends from origin along the direction matrix.
@@ -475,7 +482,7 @@ int main(int argc, char *argv[])
 	metric->SetDerivativeMode(DERIVMODE);
 	metric->SetMainMetricIndex(MAINMETRIC);
 	metric->SetComputeOverlap(METRICOVERLAP);
-	metric->SetOverlapPadding(vm["overlappadding"].as<unsigned int>());
+	metric->SetOverlapPadding(vm["metricpadding"].as<unsigned int>());
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
