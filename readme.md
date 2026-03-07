@@ -132,6 +132,29 @@ A typical workflow registers images in order of increasing flexibility:
 | `--ncpercentage` | `0.1` | Fraction of voxels for NC |
 | `--nmibins` | `64` | Number of histogram bins for NMI |
 
+### Metric "h" Parameters and Weight Scalers
+
+Two related parameter classes control how individual metrics behave:
+
+- Histogram / noise parameters (the "h" parameters): affect histogram-based metrics or gradient noise tolerance.
+  - **MI (Mattes):** `--mattesnumberofbins` / `BinNumbers` (default `64`) — joint-histogram bins for Mattes MI. Larger → finer but noisier estimates.
+  - **NMI:** `--nmibins` / `NMIBinNumbers` (default `64`) — joint-histogram bins for Normalized MI.
+  - **NGF:** `--etavaluefixed` / `fixed_eta` and `--etavaluemoving` / `moving_eta` (default `-1` = auto; effective typical ≈ `5.0`) — Haber/NGF noise parameters that regularise gradient magnitudes. Larger values tolerate more gradient noise.
+
+- Weight scalers: user-facing weights that scale each metric's contribution in the composite cost and (optionally) its derivative.
+  - **MI:** `--alpha` (`α`) and `--alphaderivative` (`α'`) — default `1.0`.
+  - **NGF:** `--lambda` (`λ`) and `--lambdaderivative` (`λ'`) — default `1.0` (value) / `0` (derivative).
+  - **MSE:** `--nu` (`ν`) and `--nuderivative` (`ν'`) — default `1.0`.
+  - **NC:** `--yota` (`ζ`) and `--yotaderivative` (`ζ'`) — default `0.0`.
+  - **GD:** `--rho` (`ρ`) and `--rhoderivative` (`ρ'`) — default `0.0`.
+  - **NMI:** `--sigma` (`σ`) and `--sigmaderivative` (`σ'`) — default `0.0`.
+  - **Label / Kappa:** `--labelkappa` / `LabelKappa` and `--labelkappaderiv` — default `0.0`.
+
+Usage notes:
+- Set a metric weight to `0.0` to disable it.
+- Use derivative weights to include a metric only in the value or also in the gradient.
+- Typical tuning: primary metric ≈ `1.0`, complementary metrics ≈ `0.3–0.7`. Use `--derivativemode 2` for automatic scaling.
+
 ### NGF Settings
 
 | Short | Long | Default | Description |

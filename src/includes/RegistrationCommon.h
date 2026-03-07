@@ -119,6 +119,8 @@ inline void WireMetric(MetricPointer & metric, const VariablesMap & vm,
     const double MSEPERCENTAGE = vm["msepercentage"].template as<double>();
     const double NGFPERCENTAGE = vm["ngfpercentage"].template as<double>();
     const double NCPERCENTAGE  = vm["ncpercentage"].template as<double>();
+    const double GDPERCENTAGE  = vm["gdpercentage"].template as<double>();
+    const double NMIPERCENTAGE = vm["nmipercentage"].template as<double>();
 
     metric->SetComputeOverlap(vm["metricoverlap"].template as<bool>());
     metric->SetOverlapPadding(vm["overlappadding"].template as<unsigned int>());
@@ -154,10 +156,12 @@ inline void WireMetric(MetricPointer & metric, const VariablesMap & vm,
 
     metric->SetRho(vm["rho"].template as<double>());
     metric->SetRhoDerivative(vm["rhoderivative"].template as<double>());
+    metric->SetGDNumberOfSamples(static_cast<unsigned int>(numberOfPixels * GDPERCENTAGE));
 
     metric->SetSigma(vm["sigma"].template as<double>());
     metric->SetSigmaDerivative(vm["sigmaderivative"].template as<double>());
     metric->SetNMIBinNumbers(vm["nmibins"].template as<int>());
+    metric->SetNMINumberOfSamples(static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE));
 
     // Threshold
     const double TR = vm["fixedimagethreshold"].template as<double>();
