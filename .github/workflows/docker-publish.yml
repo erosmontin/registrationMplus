@@ -24,6 +24,20 @@ jobs:
           username: ${{ secrets.EM_DOCKERHUB_USERNAME }}
           password: ${{ secrets.EM_DOCKERHUB_TOKEN }}
 
+      - name: Determine image name
+        id: image
+        env:
+          EM_USER: ${{ secrets.EM_DOCKERHUB_USERNAME }}
+          EM_REPO: ${{ secrets.MPLUS_DOCKERHUB_REPO }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          if [ -n "$EM_USER" ] && [ -n "$EM_REPO" ]; then
+            echo "image=$EM_USER/$EM_REPO" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Docker Hub secrets missing or empty; falling back to $GITHUB_REPO as image name"
+            echo "image=$GITHUB_REPO" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push image
         uses: docker/build-push-action@v4
         with:
@@ -31,5 +45,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ secrets.EM_DOCKERHUB_USERNAME }}/${{ secrets.MPLUS_DOCKERHUB_REPO }}:${{ github.event.release.tag_name }}
-            ${{ secrets.EM_DOCKERHUB_USERNAME }}/${{ secrets.MPLUS_DOCKERHUB_REPO }}:latest
+            ${{ steps.image.outputs.image }}:${{ github.event.release.tag_name }}
+            ${{ steps.image.outputs.image }}:latest
