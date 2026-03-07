@@ -1,4 +1,4 @@
-# Image Registration Based on mPlus (v5.0)
+# Image Registration Based on mPlus (v1.2)
 ![GitHub last commit](https://img.shields.io/github/last-commit/erosmontin/registrationMplus)
 ![GitHub issues](https://img.shields.io/github/issues/erosmontin/registrationMplus)
 
