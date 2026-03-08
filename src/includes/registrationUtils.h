@@ -488,6 +488,8 @@ public:
 #include "itkCheckerBoardImageFilter.h"
 #include "itkTileImageFilter.h"
 #include "itkExtractImageFilter.h"
+#include "itkResampleImageFilter.h"
+#include "itkLinearInterpolateImageFunction.h"
 #include "itkRescaleIntensityImageFilter.h"
 #include "itkImageRegionIteratorWithIndex.h"
 #include "itkImageRegionIterator.h"
@@ -610,22 +612,59 @@ public:
                 DrawLineRGB(canvas.GetPointer(), W, H, x0, y0+1, x1, y1+1, c.r, c.g, c.b);
             }
 
-            // Legend swatch (3-pixel-thick horizontal line)
+            // Legend swatch (3-pixel-thick horizontal line) + text label
             const int swX = padL + plotW - 130;
             const int swY = padT + 8 + static_cast<int>(s) * 14;
             for (int dy = 0; dy < 3; ++dy)
                 DrawLineRGB(canvas.GetPointer(), W, H,
                             swX, swY+dy, swX+22, swY+dy, c.r, c.g, c.b);
+            // Draw series name next to swatch
+            if (s < m_SeriesNames.size())
+                DrawText(canvas.GetPointer(), W, H,
+                         swX + 26, swY - 2, m_SeriesNames[s], c.r, c.g, c.b);
         }
 
-        // Axis tick marks (5 ticks each)
+        // Axis tick marks (5 ticks each) with value labels
         for (int t = 0; t <= 4; ++t)
         {
+            // Y-axis ticks
             int y = padT + plotH - t * plotH / 4;
             DrawLineRGB(canvas.GetPointer(), W, H, padL-5, y, padL, y, 0, 0, 0);
+            // Y-axis tick value
+            {
+                double val = vMin + t * vRange / 4.0;
+                std::ostringstream oss;
+                if (std::abs(val) < 0.01 && val != 0.0)
+                    oss << std::scientific << std::setprecision(1) << val;
+                else
+                    oss << std::fixed << std::setprecision(2) << val;
+                std::string label = oss.str();
+                int labelW = static_cast<int>(label.size()) * 6;
+                DrawText(canvas.GetPointer(), W, H,
+                         padL - 6 - labelW, y - 3, label, 0, 0, 0);
+            }
+
+            // X-axis ticks
             int x = padL + t * plotW / 4;
             DrawLineRGB(canvas.GetPointer(), W, H, x, padT+plotH, x, padT+plotH+5, 0, 0, 0);
+            // X-axis tick value (iteration number)
+            {
+                unsigned long iterVal = m_IterHistory.front()
+                    + static_cast<unsigned long>(t * iterRange / 4.0);
+                std::ostringstream oss;
+                oss << iterVal;
+                std::string label = oss.str();
+                int labelW = static_cast<int>(label.size()) * 6;
+                DrawText(canvas.GetPointer(), W, H,
+                         x - labelW / 2, padT + plotH + 8, label, 0, 0, 0);
+            }
         }
+
+        // Axis titles
+        DrawText(canvas.GetPointer(), W, H,
+                 padL + plotW / 2 - 30, H - 12, "ITERATION", 0, 0, 0);
+        DrawText(canvas.GetPointer(), W, H,
+                 2, padT - 12, "METRIC", 0, 0, 0);
 
         const std::string plotPath = m_OutputDir + "/convergence.png";
         using PW = itk::ImageFileWriter<RGBSliceType>;
@@ -889,6 +928,53 @@ private:
         return out;
     }
 
+    /** Resample a 2D slice to isotropic pixel spacing (smallest spacing wins).
+     *  If spacing is already isotropic (within 1% tolerance), returns the
+     *  input unchanged.  This fixes the squashed-looking debug PNGs that
+     *  occur with anisotropic voxels (e.g. sagittal acquisitions). */
+    typename SliceType::Pointer
+    ResampleSliceIsotropic(typename SliceType::Pointer slice) const
+    {
+        auto sp = slice->GetSpacing();
+        double minSp = sp[0];
+        for (unsigned d = 1; d < Dim - 1; ++d)
+            if (sp[d] < minSp) minSp = sp[d];
+
+        bool needResample = false;
+        for (unsigned d = 0; d < Dim - 1; ++d)
+        {
+            if (std::abs(sp[d] - minSp) / minSp > 0.01)
+            { needResample = true; break; }
+        }
+        if (!needResample) return slice;
+
+        // Compute new size to cover the same physical extent
+        auto oldSize = slice->GetLargestPossibleRegion().GetSize();
+        typename SliceType::SizeType    newSize;
+        typename SliceType::SpacingType newSpacing;
+        for (unsigned d = 0; d < Dim - 1; ++d)
+        {
+            newSpacing[d] = minSp;
+            newSize[d] = static_cast<typename SliceType::SizeType::SizeValueType>(
+                std::ceil(oldSize[d] * sp[d] / minSp));
+        }
+
+        using ResampleSlice = itk::ResampleImageFilter<SliceType, SliceType>;
+        auto rs = ResampleSlice::New();
+        rs->SetInput(slice);
+        rs->SetSize(newSize);
+        rs->SetOutputSpacing(newSpacing);
+        rs->SetOutputOrigin(slice->GetOrigin());
+        rs->SetOutputDirection(slice->GetDirection());
+        rs->SetDefaultPixelValue(0);
+        using LinInterp = itk::LinearInterpolateImageFunction<SliceType, double>;
+        rs->SetInterpolator(LinInterp::New());
+        rs->Update();
+        typename SliceType::Pointer out = rs->GetOutput();
+        out->DisconnectPipeline();
+        return out;
+    }
+
     /** Bresenham line draw in green (or any RGB) directly on an RGBSliceType. */
     static void DrawLineRGB(RGBSliceType* img, int W, int H,
                             int x0, int y0, int x1, int y1,
@@ -913,6 +999,99 @@ private:
         }
     }
 
+    /** Minimal 5×7 bitmap font for drawing text labels on RGB images.
+     *  Covers A-Z, a-z (rendered as uppercase), 0-9, '.', '-', '+', ' '.
+     *  Each glyph is 5 pixels wide, 7 pixels tall. */
+    static void DrawText(RGBSliceType* img, int W, int H,
+                         int startX, int startY, const std::string& text,
+                         unsigned char r, unsigned char g, unsigned char b)
+    {
+        // 5×7 font bitmaps (each row is one column of 7 bits, LSB = top)
+        // Index: 0-9 → digits, 10-35 → A-Z, 36 → '.', 37 → '-', 38 → '+', 39 → ' ', 40 → ':'
+        static const unsigned char font[][5] = {
+            {0x3E,0x51,0x49,0x45,0x3E}, // 0
+            {0x00,0x42,0x7F,0x40,0x00}, // 1
+            {0x42,0x61,0x51,0x49,0x46}, // 2
+            {0x21,0x41,0x45,0x4B,0x31}, // 3
+            {0x18,0x14,0x12,0x7F,0x10}, // 4
+            {0x27,0x45,0x45,0x45,0x39}, // 5
+            {0x3C,0x4A,0x49,0x49,0x30}, // 6
+            {0x01,0x71,0x09,0x05,0x03}, // 7
+            {0x36,0x49,0x49,0x49,0x36}, // 8
+            {0x06,0x49,0x49,0x29,0x1E}, // 9
+            {0x7E,0x11,0x11,0x11,0x7E}, // A 10
+            {0x7F,0x49,0x49,0x49,0x36}, // B
+            {0x3E,0x41,0x41,0x41,0x22}, // C
+            {0x7F,0x41,0x41,0x22,0x1C}, // D
+            {0x7F,0x49,0x49,0x49,0x41}, // E
+            {0x7F,0x09,0x09,0x09,0x01}, // F
+            {0x3E,0x41,0x49,0x49,0x7A}, // G
+            {0x7F,0x08,0x08,0x08,0x7F}, // H
+            {0x00,0x41,0x7F,0x41,0x00}, // I
+            {0x20,0x40,0x41,0x3F,0x01}, // J
+            {0x7F,0x08,0x14,0x22,0x41}, // K
+            {0x7F,0x40,0x40,0x40,0x40}, // L
+            {0x7F,0x02,0x0C,0x02,0x7F}, // M
+            {0x7F,0x04,0x08,0x10,0x7F}, // N
+            {0x3E,0x41,0x41,0x41,0x3E}, // O
+            {0x7F,0x09,0x09,0x09,0x06}, // P
+            {0x3E,0x41,0x51,0x21,0x5E}, // Q
+            {0x7F,0x09,0x19,0x29,0x46}, // R
+            {0x46,0x49,0x49,0x49,0x31}, // S
+            {0x01,0x01,0x7F,0x01,0x01}, // T
+            {0x3F,0x40,0x40,0x40,0x3F}, // U
+            {0x1F,0x20,0x40,0x20,0x1F}, // V
+            {0x3F,0x40,0x38,0x40,0x3F}, // W
+            {0x63,0x14,0x08,0x14,0x63}, // X
+            {0x07,0x08,0x70,0x08,0x07}, // Y
+            {0x61,0x51,0x49,0x45,0x43}, // Z 35
+            {0x00,0x60,0x60,0x00,0x00}, // . 36
+            {0x08,0x08,0x08,0x08,0x08}, // - 37
+            {0x08,0x08,0x3E,0x08,0x08}, // + 38
+            {0x00,0x00,0x00,0x00,0x00}, // ' ' 39
+            {0x00,0x36,0x36,0x00,0x00}, // : 40
+        };
+
+        int cx = startX;
+        for (size_t ci = 0; ci < text.size(); ++ci)
+        {
+            char ch = text[ci];
+            int gi = -1;
+            if (ch >= '0' && ch <= '9') gi = ch - '0';
+            else if (ch >= 'A' && ch <= 'Z') gi = ch - 'A' + 10;
+            else if (ch >= 'a' && ch <= 'z') gi = ch - 'a' + 10; // lowercase → uppercase
+            else if (ch == '.') gi = 36;
+            else if (ch == '-') gi = 37;
+            else if (ch == '+') gi = 38;
+            else if (ch == ' ') gi = 39;
+            else if (ch == ':') gi = 40;
+            else if (ch == 'e' || ch == 'E') gi = 14; // E
+            else { cx += 6; continue; } // unknown → skip
+
+            for (int col = 0; col < 5; ++col)
+            {
+                unsigned char bits = font[gi][col];
+                for (int row = 0; row < 7; ++row)
+                {
+                    if (bits & (1 << row))
+                    {
+                        int px = cx + col;
+                        int py = startY + row;
+                        if (px >= 0 && px < W && py >= 0 && py < H)
+                        {
+                            typename RGBSliceType::IndexType idx;
+                            idx[0] = px; idx[1] = py;
+                            RGBPixelType pixel;
+                            pixel.SetRed(r); pixel.SetGreen(g); pixel.SetBlue(b);
+                            img->SetPixel(idx, pixel);
+                        }
+                    }
+                }
+            }
+            cx += 6; // 5px glyph + 1px spacing
+        }
+    }
+
     /** Overlay the actual B-spline control-point lattice on an RGB slice.
      *
      *  Enumerates all control-point nodes, maps each through the current
@@ -926,7 +1105,8 @@ private:
     void OverlayBSplineMesh(typename RGBSliceType::Pointer& rgbInOut,
                             const TImage* fixedImg,
                             unsigned int sliceZ,
-                            int offsetX = 0, int offsetY = 0) const
+                            int offsetX = 0, int offsetY = 0,
+                            double scaleX = 1.0, double scaleY = 1.0) const
     {
         using BSTransformType = itk::BSplineTransform<double, 3, 3>;
         auto* bst = dynamic_cast<BSTransformType*>(m_Transform.GetPointer());
@@ -973,11 +1153,12 @@ private:
             for (unsigned d = 0; d < 3; ++d)
                 displaced[d] = physPt[d] + coeffImages[d]->GetPixel(idx3);
 
-            // Project to fixed image continuous index, then add canvas offset
+            // Project to fixed image continuous index, scale for isotropic
+            // resampling, then add canvas offset
             itk::ContinuousIndex<double, 3> ci;
             fixedImg->TransformPhysicalPointToContinuousIndex(displaced, ci);
-            proj[(k*ny + j)*nx + i] = { ci[0] + offsetX,
-                                        ci[1] + offsetY,
+            proj[(k*ny + j)*nx + i] = { ci[0] * scaleX + offsetX,
+                                        ci[1] * scaleY + offsetY,
                                         ci[2] };
         }
 
@@ -1061,8 +1242,13 @@ public:
                 auto sz = m_FixedImage->GetLargestPossibleRegion().GetSize();
                 unsigned int midZ = sz[Dim - 1] / 2;
 
-                auto fixSlice = ExtractAxialSlice(m_FixedImage.GetPointer(), midZ);
-                auto movSlice = ExtractAxialSlice(resampled.GetPointer(),    midZ);
+                auto fixSliceRaw = ExtractAxialSlice(m_FixedImage.GetPointer(), midZ);
+                auto movSliceRaw = ExtractAxialSlice(resampled.GetPointer(),    midZ);
+
+                // Resample to isotropic pixels so anisotropic voxels
+                // (e.g. sagittal acquisitions) render with correct aspect ratio
+                auto fixSlice = ResampleSliceIsotropic(fixSliceRaw);
+                auto movSlice = ResampleSliceIsotropic(movSliceRaw);
 
                 // Checkerboard
                 using CB = itk::CheckerBoardImageFilter<SliceType>;
@@ -1087,14 +1273,25 @@ public:
                 auto cRGB = GrayToRGB(cUC.GetPointer());
 
                 // ── Compute padding to show full B-spline domain ────────
+                // Use the (possibly resampled-to-isotropic) slice dimensions
                 int padL = 0, padR = 0, padT = 0, padB = 0;
-                auto imgSz2 = m_FixedImage->GetLargestPossibleRegion().GetSize();
-                const int imgW = static_cast<int>(imgSz2[0]);
-                const int imgH = static_cast<int>(imgSz2[1]);
+                auto sliceSz2 = fixSlice->GetLargestPossibleRegion().GetSize();
+                const int imgW = static_cast<int>(sliceSz2[0]);
+                const int imgH = static_cast<int>(sliceSz2[1]);
+
+                // Compute scale factors from original fixed-image voxel
+                // coords to isotropic-resampled pixel coords
+                auto fixSp3D = m_FixedImage->GetSpacing();
+                double minSp2D = std::min(fixSp3D[0], fixSp3D[1]);
+                const double isoScaleX = fixSp3D[0] / minSp2D;
+                const double isoScaleY = fixSp3D[1] / minSp2D;
 
                 if (m_ShowBSplineMesh)
                 {
                     auto bb = ComputeMeshBBox2D(m_FixedImage.GetPointer());
+                    // Scale bbox to isotropic pixel space
+                    bb.minX *= isoScaleX;  bb.maxX *= isoScaleX;
+                    bb.minY *= isoScaleY;  bb.maxY *= isoScaleY;
                     padL = std::max(0, static_cast<int>(std::ceil(-bb.minX)) + 3);
                     padT = std::max(0, static_cast<int>(std::ceil(-bb.minY)) + 3);
                     padR = std::max(0, static_cast<int>(std::ceil(bb.maxX - (imgW - 1))) + 3);
@@ -1142,7 +1339,8 @@ public:
                     // Create padded canvas with registered moving image,
                     // then overlay the full B-spline lattice.
                     gridRGB = PadRGBPanel(mRGB.GetPointer(), canvasW, canvasH, padL, padT);
-                    OverlayBSplineMesh(gridRGB, m_FixedImage.GetPointer(), midZ, padL, padT);
+                    OverlayBSplineMesh(gridRGB, m_FixedImage.GetPointer(), midZ,
+                                       padL, padT, isoScaleX, isoScaleY);
                     // Draw dim border showing original image extent
                     DrawImageBorder(gridRGB, canvasW, canvasH, padL, padT, imgW, imgH);
                 }
@@ -1166,7 +1364,8 @@ public:
                     rsg->SetDefaultPixelValue(0);
                     rsg->Update();
 
-                    auto warpedGridSlice = ExtractAxialSlice(rsg->GetOutput(), midZ);
+                    auto warpedGridSliceRaw = ExtractAxialSlice(rsg->GetOutput(), midZ);
+                    auto warpedGridSlice = ResampleSliceIsotropic(warpedGridSliceRaw);
                     auto wgUC = ToUChar(warpedGridSlice.GetPointer());
 
                     gridRGB = OverlayGreenGrid(mRGB.GetPointer(), wgUC.GetPointer());
