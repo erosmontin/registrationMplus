@@ -6,6 +6,7 @@
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
 #include "itkResampleImageFilter.h"
+#include "itkImageRegionConstIteratorWithIndex.h"
 #include "itkCastImageFilter.h"
 #include "itkBSplineResampleImageFunction.h"
 #include "itkIdentityTransform.h"
@@ -113,7 +114,7 @@ int main(int argc, char *argv[])
     ("ubound", po::value<double>()->default_value(0), "Upper bound")
     ("transformout,T", po::value<std::string>()->default_value("N"), "Output for transform")
     ("transformin,W", po::value<std::string>()->default_value("N"), "Input no rigid transform for transform")
-    ("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file")
+    ("gridposition,G", po::value<std::string>()->default_value("N"), "Read the position of the grid from a file; if it contains non-zero voxels, use their bounding box")
     ("dfltpixelvalue", po::value<double>()->default_value(0), "Default pixel value")
     ("verbose,V", po::value<bool>()->default_value(false), "verbose")
     ("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NC (Normalized Correlation) weight")
@@ -387,11 +388,93 @@ int main(int argc, char *argv[])
 		meshImageReader->SetFileName(GRIDPOSITION);
 		meshImageReader->Update();
 		ImageType::ConstPointer meshImage = meshImageReader->GetOutput();
+
+		// If the input is a mask/object image, shrink the mesh domain to the
+		// non-zero voxel bounding box. If it is empty, preserve legacy behavior
+		// and use the full image geometry.
+		ImageType::IndexType bboxMinIndex;
+		ImageType::IndexType bboxMaxIndex;
+		bool hasActiveMaskVoxel = false;
+		using MeshIteratorType = itk::ImageRegionConstIteratorWithIndex<ImageType>;
+		for (MeshIteratorType it(meshImage, meshImage->GetLargestPossibleRegion());
+			 !it.IsAtEnd(); ++it)
+		{
+			if (it.Get() == PixelType{})
+			{
+				continue;
+			}
+
+			const ImageType::IndexType currentIndex = it.GetIndex();
+			if (!hasActiveMaskVoxel)
+			{
+				bboxMinIndex = currentIndex;
+				bboxMaxIndex = currentIndex;
+				hasActiveMaskVoxel = true;
+				continue;
+			}
+
+			for (unsigned int d = 0; d < ImageDimension; ++d)
+			{
+				bboxMinIndex[d] = std::min(bboxMinIndex[d], currentIndex[d]);
+				bboxMaxIndex[d] = std::max(bboxMaxIndex[d], currentIndex[d]);
+			}
+		}
+
 		// get the information of the image that specifies the position of the grid and overwrite the information of the fixed image
 		meshspacing = meshImage->GetSpacing();
-		meshorigin = meshImage->GetOrigin();
 		meshdirection = meshImage->GetDirection();
+		meshorigin = meshImage->GetOrigin();
 		meshsize = meshImage->GetLargestPossibleRegion().GetSize();
+
+		if (hasActiveMaskVoxel)
+		{
+			ImageType::PointType bboxOrigin;
+			meshImage->TransformIndexToPhysicalPoint(bboxMinIndex, bboxOrigin);
+			meshorigin = bboxOrigin;
+
+			ImageType::SizeType bboxSize;
+			for (unsigned int d = 0; d < ImageDimension; ++d)
+			{
+				bboxSize[d] = static_cast<ImageType::SizeType::SizeValueType>(
+					bboxMaxIndex[d] - bboxMinIndex[d] + 1);
+			}
+			meshsize = bboxSize;
+
+			if (vm["verbose"].as<bool>())
+			{
+				std::cout << "[GridPosition] Using non-zero mask bounding box";
+				std::cout << " minIndex=[";
+				for (unsigned int d = 0; d < ImageDimension; ++d)
+				{
+					if (d != 0) std::cout << ", ";
+					std::cout << bboxMinIndex[d];
+				}
+				std::cout << "] maxIndex=[";
+				for (unsigned int d = 0; d < ImageDimension; ++d)
+				{
+					if (d != 0) std::cout << ", ";
+					std::cout << bboxMaxIndex[d];
+				}
+				std::cout << "] origin=[";
+				for (unsigned int d = 0; d < ImageDimension; ++d)
+				{
+					if (d != 0) std::cout << ", ";
+					std::cout << meshorigin[d];
+				}
+				std::cout << "] size=[";
+				for (unsigned int d = 0; d < ImageDimension; ++d)
+				{
+					if (d != 0) std::cout << ", ";
+					std::cout << meshsize[d];
+				}
+				std::cout << "]" << std::endl;
+			}
+		}
+		else if (vm["verbose"].as<bool>())
+		{
+			std::cout << "[GridPosition] No non-zero voxels found in " << GRIDPOSITION
+			          << "; falling back to full image geometry." << std::endl;
+		}
 
 		// resample the meshimage on the fixedimage space in casse the two images have different size
 		typedef itk::ResampleImageFilter<ImageType, ImageType> ResampleFilterType;
@@ -404,36 +487,30 @@ int main(int argc, char *argv[])
 		fixedImage->SetRequestedRegion(meshregionresampled);
 	}
 
+	itk::Vector<double, SpaceDimension> axisPadding;
+	axisPadding.Fill(0.0);
 	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
 			// Number of extra B-spline control points outside the image domain
-			// per side.  ITK internally handles the SplineOrder border
+			// per side. ITK internally handles the SplineOrder border
 			// coefficients; this setting only controls how far the domain
 			// extends beyond the anatomy for better edge deformation.
 			const unsigned int borderNodesPerSide =
 				vm["overlappadding"].as<unsigned int>();
 			const double extension = borderNodesPerSide * GRIDRESOLUTION;
+			const double totalPad = meshMargin + extension;
+			axisPadding[i] = totalPad;
 
-			// The domain extends from origin along the direction matrix.
-			// When direction[i][i] < 0 the physical extent goes negative,
-			// so the origin must be shifted *positive* to place border
-			// nodes symmetrically around the anatomy (and vice versa).
-			const double dirSign = meshdirection[i][i] >= 0 ? 1.0 : -1.0;
-
-			// 1) shift the origin "before" the anatomy in its natural direction
-			fixedOrigin[i] = meshorigin[i] - dirSign * (meshMargin + extension);
-
-			// 2) grow the physical size by 2*extension
+			// Grow the physical size along each transform-domain axis.
 			fixedPhysicalDimensions[i] =
 				meshspacing[i] * (meshsize[i] - 1)
-				+ 2.0 * meshMargin
-				+ 2.0 * extension;
+				+ 2.0 * totalPad;
 
-			// 3) now recompute how many grid‐nodes you need
+			// Recompute how many grid-nodes you need.
 			const unsigned int totalGridNodes =
 				static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
 
-			// 4) subtract the spline order to get the final meshSize
+			// Subtract the spline order to get the final meshSize.
 			meshSize[i] = totalGridNodes > SplineOrder
 						? totalGridNodes - SplineOrder
 						: 1;  // guard against too small
@@ -442,19 +519,51 @@ int main(int argc, char *argv[])
 			{
 				std::cout
 				<< "Dim " << i
-				<< " dirSign = " << dirSign
-				<< ", origin = " << fixedOrigin[i]
+				<< ", axisPad = " << totalPad
 				<< ", physSize = " << fixedPhysicalDimensions[i]
 				<< ", meshSize = " << meshSize[i]
 				<< std::endl;
 			}
 	}
 
+	// Shift the mesh origin "before" the anatomy along the full transform
+	// domain basis, not just by the sign of the diagonal. This keeps the
+	// domain placement correct for axis permutations and oblique directions.
+	for (unsigned int row = 0; row < SpaceDimension; ++row)
+	{
+		fixedOrigin[row] = meshorigin[row];
+		for (unsigned int col = 0; col < SpaceDimension; ++col)
+		{
+			fixedOrigin[row] -= meshdirection[row][col] * axisPadding[col];
+		}
+	}
+
+	if (vm["verbose"].as<bool>())
+	{
+		std::cout << "[GridPosition] Transform domain origin = [";
+		for (unsigned int d = 0; d < SpaceDimension; ++d)
+		{
+			if (d != 0) std::cout << ", ";
+			std::cout << fixedOrigin[d];
+		}
+		std::cout << "] direction = [";
+		for (unsigned int row = 0; row < SpaceDimension; ++row)
+		{
+			if (row != 0) std::cout << "; ";
+			for (unsigned int col = 0; col < SpaceDimension; ++col)
+			{
+				if (col != 0) std::cout << ", ";
+				std::cout << meshdirection[row][col];
+			}
+		}
+		std::cout << "]" << std::endl;
+	}
+
 	transform->SetTransformDomainOrigin(fixedOrigin);
 	transform->SetTransformDomainPhysicalDimensions(
 		fixedPhysicalDimensions);
 	transform->SetTransformDomainMeshSize(meshSize);
-	transform->SetTransformDomainDirection(fixedImage->GetDirection());
+	transform->SetTransformDomainDirection(meshdirection);
 	transform->SetIdentity();
 
 	const unsigned int numberOfGridNodes = transform->GetNumberOfParameters() / SpaceDimension;

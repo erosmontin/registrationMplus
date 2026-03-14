@@ -823,6 +823,7 @@ private:
         auto coeffImg = coeffImages[0];
         auto coeffSize = coeffImg->GetLargestPossibleRegion().GetSize();
         const unsigned int nx = coeffSize[0], ny = coeffSize[1], nz = coeffSize[2];
+        bool haveNode = false;
 
         for (unsigned int k = 0; k < nz; ++k)
         for (unsigned int j = 0; j < ny; ++j)
@@ -837,10 +838,25 @@ private:
                 displaced[d] = physPt[d] + coeffImages[d]->GetPixel(idx3);
             itk::ContinuousIndex<double, 3> ci;
             fixedImg->TransformPhysicalPointToContinuousIndex(displaced, ci);
+
+            if (!haveNode)
+            {
+                bb = { ci[0], ci[1], ci[0], ci[1] };
+                haveNode = true;
+                continue;
+            }
+
             bb.minX = std::min(bb.minX, ci[0]);
             bb.minY = std::min(bb.minY, ci[1]);
             bb.maxX = std::max(bb.maxX, ci[0]);
             bb.maxY = std::max(bb.maxY, ci[1]);
+        }
+
+        if (!haveNode)
+        {
+            bb = {0.0, 0.0,
+                  static_cast<double>(imgSz[0] - 1),
+                  static_cast<double>(imgSz[1] - 1)};
         }
         return bb;
     }
