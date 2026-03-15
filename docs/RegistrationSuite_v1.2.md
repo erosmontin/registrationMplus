@@ -395,6 +395,7 @@ The main metric for mode 2 is selected with `--mainmetric`:
 | `--metricpadding` | 0 | Additional voxel padding around the overlap region |
 | `--fixedimagethreshold,-t` | −∞ | Mask out fixed-image pixels below this intensity |
 | `--numberofthreads` | 2 | ITK multi-threading for metric evaluation |
+| `--workingresolution` | `0,0,0` | Internal registration spacing in mm (`x,y,z`). Non-zero values resample fixed/moving images, and any label maps used by the metric, before optimisation while preserving original fixed-image geometry for the final written result. |
 
 ---
 
@@ -621,4 +622,3 @@ config.derivative_mode = 2
 | Monomodal | Any | `--modality singlemodal` or `gd_singlemodal.json` |
 
 ---
-

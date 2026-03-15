@@ -120,6 +120,8 @@ int main( int argc, char *argv[] )
         ("sigmaderivative", po::value<double>()->default_value(0.0), "Sigma derivative for NMI")
         ("nmibins",         po::value<int>()->default_value(64),     "Number of histogram bins for NMI")
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
+        ("workingresolution", po::value<std::string>()->default_value("0,0,0"),
+            "Internal registration spacing in mm (x,y,z). Use 0,0,0 to keep the input spacing.")
         ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
 	("metricoverlap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
 	("fixedlabelmap",  po::value<std::string>()->default_value("N"), "Fixed label map filename (N = none)")
@@ -300,6 +302,17 @@ int main( int argc, char *argv[] )
             po::variable_value(boost::any(ngf), false) });
     }
 
+    FixedImageType::SpacingType workingSpacing;
+    bool useWorkingResolution = false;
+    if (!RegCommon::ParseOptionalSpacing<FixedImageType::SpacingType, ImageDimension>(
+            vm["workingresolution"].as<std::string>(),
+            "workingresolution",
+            workingSpacing,
+            useWorkingResolution))
+    {
+        return EXIT_FAILURE;
+    }
+
 	auto optimizer = OptimizerType::New();
 
 
@@ -326,19 +339,41 @@ int main( int argc, char *argv[] )
 	fixedImageReader->Update();
 	movingImageReader->Update();
 
-	FixedImageType::ConstPointer fixedImage = fixedImageReader->GetOutput();
-	FixedImageType::ConstPointer movingImage = movingImageReader->GetOutput();
+	FixedImageType::ConstPointer originalFixedImage = fixedImageReader->GetOutput();
+	FixedImageType::ConstPointer originalMovingImage = movingImageReader->GetOutput();
+	FixedImageType::ConstPointer fixedImage = originalFixedImage;
+	FixedImageType::ConstPointer movingImage = originalMovingImage;
 
 	// ── Input validation ──────────────────────────────────────────────────────
-	if (!fixedImage || fixedImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
+	if (!originalFixedImage || originalFixedImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
 		std::cerr << "Error: Failed to load fixed image or image is empty." << std::endl;
 		return EXIT_FAILURE;
 	}
-	if (!movingImage || movingImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
+	if (!originalMovingImage || originalMovingImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
 		std::cerr << "Error: Failed to load moving image or image is empty." << std::endl;
 		return EXIT_FAILURE;
 	}
-	
+
+	if (useWorkingResolution) {
+		std::cout << "[WorkingResolution] Resampling registration inputs to spacing "
+		          << workingSpacing << std::endl;
+		if (!RegCommon::SpacingEquals(originalFixedImage->GetSpacing(), workingSpacing)) {
+			fixedImage = RegCommon::ResampleScalarImageToSpacing<FixedImageType>(
+			    originalFixedImage, workingSpacing);
+		}
+		if (!RegCommon::SpacingEquals(originalMovingImage->GetSpacing(), workingSpacing)) {
+			movingImage = RegCommon::ResampleScalarImageToSpacing<FixedImageType>(
+			    originalMovingImage, workingSpacing, DFLTPIXELVALUE);
+		}
+		if (fixedLabelMap && !RegCommon::SpacingEquals(fixedLabelMap->GetSpacing(), workingSpacing)) {
+			fixedLabelMap = RegCommon::ResampleNearestNeighborImageToSpacing<LabelImageType>(
+			    fixedLabelMap, workingSpacing);
+		}
+		if (movingLabelMap && !RegCommon::SpacingEquals(movingLabelMap->GetSpacing(), workingSpacing)) {
+			movingLabelMap = RegCommon::ResampleNearestNeighborImageToSpacing<LabelImageType>(
+			    movingLabelMap, workingSpacing);
+		}
+	}
 
   using FixedImagePyramidType =
     itk::MultiResolutionPyramidImageFilter<FixedImageType,
@@ -658,10 +693,10 @@ if (method == "translation") {
 	resample->SetTransform( transform );
 	resample->SetInput( movingImageReader->GetOutput() );
 
-	resample->SetSize(    fixedImage->GetLargestPossibleRegion().GetSize() );
-	resample->SetOutputOrigin(  fixedImage->GetOrigin() );
-	resample->SetOutputSpacing( fixedImage->GetSpacing() );
-	resample->SetOutputDirection( fixedImage->GetDirection() );
+	resample->SetSize(    originalFixedImage->GetLargestPossibleRegion().GetSize() );
+	resample->SetOutputOrigin(  originalFixedImage->GetOrigin() );
+	resample->SetOutputSpacing( originalFixedImage->GetSpacing() );
+	resample->SetOutputDirection( originalFixedImage->GetDirection() );
 	resample->SetDefaultPixelValue( DFLTPIXELVALUE );
 
 	typedef itk::ImageFileWriter< FixedImageType >  WriterType;

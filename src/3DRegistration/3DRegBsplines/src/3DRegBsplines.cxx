@@ -132,6 +132,8 @@ int main(int argc, char *argv[])
     ("derivativemode", po::value<int>()->default_value(0), "Derivative merge mode: 0=consistent, 2=main-metric adaptive (mode 1 not allowed for bsplines)")
     ("mainmetric", po::value<int>()->default_value(0), "Main metric index for mode 2: 0=MI, 1=NGF, 2=MSE, 3=NC, 4=Label, 5=GD, 6=NMI")
     ("ngfspacing", po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
+    ("workingresolution", po::value<std::string>()->default_value("0,0,0"),
+       "Internal registration spacing in mm (x,y,z). Use 0,0,0 to keep the input spacing.")
     ("meshmarginsize", po::value<double>()->default_value(0.0), "Margin (mm) to extend mesh domain")
 	("metricoverlap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
 	("fixedlabelmap",  po::value<std::string>()->default_value("N"), "Fixed label map filename (N = none)")
@@ -230,6 +232,17 @@ int main(int argc, char *argv[])
 	ImageType::SpacingType ngf;
 	for (unsigned i = 0; i < ImageDimension; ++i)
 		ngf[i] = tmp[i];
+
+	ImageType::SpacingType workingSpacing;
+	bool useWorkingResolution = false;
+	if (!RegCommon::ParseOptionalSpacing<ImageType::SpacingType, ImageDimension>(
+	        vm["workingresolution"].as<std::string>(),
+	        "workingresolution",
+	        workingSpacing,
+	        useWorkingResolution))
+	{
+		return EXIT_FAILURE;
+	}
 
 	if (vm["verbose"].as<bool>())
 		RegCommon::PrintOptions(vm);
@@ -343,17 +356,45 @@ int main(int argc, char *argv[])
 	fixedImageReader->Update();
 	movingImageReader->Update();
 
-	ImageType::ConstPointer fixedImage = fixedImageReader->GetOutput();
-	ImageType::Pointer movingImage = const_cast<ImageType*>(movingImageReader->GetOutput());
+	ImageType::ConstPointer originalFixedImage = fixedImageReader->GetOutput();
+	ImageType::ConstPointer originalMovingImage = movingImageReader->GetOutput();
+	ImageType::ConstPointer fixedImage = originalFixedImage;
+	ImageType::Pointer movingImage = const_cast<ImageType*>(originalMovingImage.GetPointer());
 
 	// ── Input validation ──────────────────────────────────────────────────────
-	if (!fixedImage || fixedImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
+	if (!originalFixedImage || originalFixedImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
 		std::cerr << "Error: Failed to load fixed image or image is empty." << std::endl;
 		return EXIT_FAILURE;
 	}
-	if (!movingImage || movingImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
+	if (!originalMovingImage || originalMovingImage->GetLargestPossibleRegion().GetNumberOfPixels() == 0) {
 		std::cerr << "Error: Failed to load moving image or image is empty." << std::endl;
 		return EXIT_FAILURE;
+	}
+
+	if (useWorkingResolution)
+	{
+		std::cout << "[WorkingResolution] Resampling registration inputs to spacing "
+		          << workingSpacing << std::endl;
+		if (!RegCommon::SpacingEquals(originalFixedImage->GetSpacing(), workingSpacing))
+		{
+			fixedImage = RegCommon::ResampleScalarImageToSpacing<ImageType>(
+			    originalFixedImage, workingSpacing);
+		}
+		if (!RegCommon::SpacingEquals(originalMovingImage->GetSpacing(), workingSpacing))
+		{
+			movingImage = RegCommon::ResampleScalarImageToSpacing<ImageType>(
+			    originalMovingImage, workingSpacing, DFLTPIXELVALUE);
+		}
+		if (fixedLabelMap && !RegCommon::SpacingEquals(fixedLabelMap->GetSpacing(), workingSpacing))
+		{
+			fixedLabelMap = RegCommon::ResampleNearestNeighborImageToSpacing<LabelImageType>(
+			    fixedLabelMap, workingSpacing);
+		}
+		if (movingLabelMap && !RegCommon::SpacingEquals(movingLabelMap->GetSpacing(), workingSpacing))
+		{
+			movingLabelMap = RegCommon::ResampleNearestNeighborImageToSpacing<LabelImageType>(
+			    movingLabelMap, workingSpacing);
+		}
 	}
 
 	registration->SetFixedImage(fixedImage);
@@ -388,6 +429,12 @@ int main(int argc, char *argv[])
 		meshImageReader->SetFileName(GRIDPOSITION);
 		meshImageReader->Update();
 		ImageType::ConstPointer meshImage = meshImageReader->GetOutput();
+		if (useWorkingResolution &&
+		    !RegCommon::SpacingEquals(meshImage->GetSpacing(), workingSpacing))
+		{
+			meshImage = RegCommon::ResampleNearestNeighborImageToSpacing<ImageType>(
+			    meshImage, workingSpacing);
+		}
 
 		// If the input is a mask/object image, shrink the mesh domain to the
 		// non-zero voxel bounding box. If it is empty, preserve legacy behavior
@@ -883,10 +930,10 @@ int main(int argc, char *argv[])
 	resample->SetTransform(outputTransform);
 	resample->SetInput(movingImageReader->GetOutput());
 
-	resample->SetSize(fixedImage->GetLargestPossibleRegion().GetSize());
-	resample->SetOutputOrigin(fixedImage->GetOrigin());
-	resample->SetOutputSpacing(fixedImage->GetSpacing());
-	resample->SetOutputDirection(fixedImage->GetDirection());
+	resample->SetSize(originalFixedImage->GetLargestPossibleRegion().GetSize());
+	resample->SetOutputOrigin(originalFixedImage->GetOrigin());
+	resample->SetOutputSpacing(originalFixedImage->GetSpacing());
+	resample->SetOutputDirection(originalFixedImage->GetDirection());
 	resample->SetDefaultPixelValue(DFLTPIXELVALUE);
 
 	typedef itk::ImageFileWriter<ImageType> WriterType;

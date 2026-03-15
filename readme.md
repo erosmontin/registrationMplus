@@ -205,6 +205,7 @@ All four panels are padded to contain the full B-spline mesh when visible, allow
 | Short | Long | Default | Description |
 |-------|------|---------|-------------|
 | | `--numberofthreads` | `2` | Number of CPU threads |
+| | `--workingresolution` | `0,0,0` | Internal registration spacing in mm as `x,y,z`. When set to non-zero values, fixed/moving images and label maps are resampled to that working grid before optimisation; final output is still written on the original fixed-image grid. |
 | `-t` | `--fixedimagethreshold` | `−99999999` | Only sample fixed voxels above this intensity |
 | | `--dfltpixelvalue` | `0` | Fill value for out-of-bounds voxels |
 | `-V` | `--verbose` | `false` | Print all parsed options at startup |

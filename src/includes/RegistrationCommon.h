@@ -3,11 +3,20 @@
 // Reduces code duplication across 3DRegAffine, 3DRegSimilarity, 3DRegAffineMultiLevel, 3DRegBsplines
 
 #include <boost/program_options.hpp>
+#include <itkIdentityTransform.h>
+#include <itkLinearInterpolateImageFunction.h>
+#include <itkNearestNeighborInterpolateImageFunction.h>
+#include <itkResampleImageFilter.h>
+
+#include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <map>
-#include <string>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
+#include <string>
+#include <vector>
 
 namespace RegCommon {
 
@@ -215,6 +224,149 @@ inline bool ParseNGFSpacing(const std::string & raw, SpacingType & out)
     }
     for (unsigned i = 0; i < Dim; ++i) out[i] = v[i];
     return true;
+}
+
+// ── Parse optional working resolution: "sx,sy,sz" or disabled via "0,0,0" ──
+template <typename SpacingType, unsigned int Dim>
+inline bool ParseOptionalSpacing(const std::string & raw,
+                                 const std::string & optionName,
+                                 SpacingType & out,
+                                 bool & enabled)
+{
+    std::string s = raw;
+    std::replace(s.begin(), s.end(), ',', ' ');
+    std::istringstream iss(s);
+    std::vector<double> v{std::istream_iterator<double>(iss),
+                          std::istream_iterator<double>()};
+
+    if (v.size() != Dim)
+    {
+        std::cerr << "Error: " << optionName << " must have " << Dim
+                  << " comma-separated values, got " << v.size() << std::endl;
+        return false;
+    }
+
+    const bool allZero = std::all_of(v.begin(), v.end(),
+        [](const double value) { return value == 0.0; });
+
+    if (allZero)
+    {
+        enabled = false;
+        return true;
+    }
+
+    for (const double value : v)
+    {
+        if (value <= 0.0)
+        {
+            std::cerr << "Error: " << optionName
+                      << " values must all be > 0, or all be 0 to disable."
+                      << std::endl;
+            return false;
+        }
+    }
+
+    for (unsigned int i = 0; i < Dim; ++i)
+    {
+        out[i] = v[i];
+    }
+    enabled = true;
+    return true;
+}
+
+template <typename SpacingType>
+inline bool SpacingEquals(const SpacingType & lhs, const SpacingType & rhs,
+                          const double tolerance = 1e-6)
+{
+    for (unsigned int i = 0; i < lhs.Size(); ++i)
+    {
+        if (std::abs(lhs[i] - rhs[i]) > tolerance)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename TImage>
+inline typename TImage::SizeType ComputeSizeForSpacing(
+    const typename TImage::ConstPointer & image,
+    const typename TImage::SpacingType & outputSpacing)
+{
+    typename TImage::SizeType outputSize;
+    const typename TImage::SizeType inputSize =
+        image->GetLargestPossibleRegion().GetSize();
+    const typename TImage::SpacingType inputSpacing = image->GetSpacing();
+
+    for (unsigned int i = 0; i < TImage::ImageDimension; ++i)
+    {
+        if (inputSize[i] <= 1)
+        {
+            outputSize[i] = 1;
+            continue;
+        }
+
+        const double physicalExtent =
+            (static_cast<double>(inputSize[i]) - 1.0) * inputSpacing[i];
+        const double scaledSize = std::llround(physicalExtent / outputSpacing[i]) + 1.0;
+        outputSize[i] = static_cast<typename TImage::SizeType::SizeValueType>(
+            std::max(1.0, scaledSize));
+    }
+
+    return outputSize;
+}
+
+template <typename TImage, typename TInterpolator>
+inline typename TImage::Pointer ResampleImageToSpacing(
+    const typename TImage::ConstPointer & image,
+    const typename TImage::SpacingType & outputSpacing,
+    const typename TInterpolator::Pointer & interpolator,
+    const double defaultPixelValue = 0.0)
+{
+    typedef itk::IdentityTransform<double, TImage::ImageDimension> IdentityTransformType;
+    typedef itk::ResampleImageFilter<TImage, TImage> ResampleFilterType;
+
+    typename IdentityTransformType::Pointer identity = IdentityTransformType::New();
+    identity->SetIdentity();
+
+    typename ResampleFilterType::Pointer resample = ResampleFilterType::New();
+    resample->SetInput(image);
+    resample->SetTransform(identity);
+    resample->SetInterpolator(interpolator);
+    resample->SetSize(ComputeSizeForSpacing<TImage>(image, outputSpacing));
+    resample->SetOutputOrigin(image->GetOrigin());
+    resample->SetOutputSpacing(outputSpacing);
+    resample->SetOutputDirection(image->GetDirection());
+    resample->SetDefaultPixelValue(static_cast<typename TImage::PixelType>(defaultPixelValue));
+    resample->Update();
+
+    typename TImage::Pointer output = resample->GetOutput();
+    output->DisconnectPipeline();
+    return output;
+}
+
+template <typename TImage>
+inline typename TImage::Pointer ResampleScalarImageToSpacing(
+    const typename TImage::ConstPointer & image,
+    const typename TImage::SpacingType & outputSpacing,
+    const double defaultPixelValue = 0.0)
+{
+    typedef itk::LinearInterpolateImageFunction<TImage, double> InterpolatorType;
+    typename InterpolatorType::Pointer interpolator = InterpolatorType::New();
+    return ResampleImageToSpacing<TImage, InterpolatorType>(
+        image, outputSpacing, interpolator, defaultPixelValue);
+}
+
+template <typename TImage>
+inline typename TImage::Pointer ResampleNearestNeighborImageToSpacing(
+    const typename TImage::ConstPointer & image,
+    const typename TImage::SpacingType & outputSpacing,
+    const double defaultPixelValue = 0.0)
+{
+    typedef itk::NearestNeighborInterpolateImageFunction<TImage, double> InterpolatorType;
+    typename InterpolatorType::Pointer interpolator = InterpolatorType::New();
+    return ResampleImageToSpacing<TImage, InterpolatorType>(
+        image, outputSpacing, interpolator, defaultPixelValue);
 }
 
 } // namespace RegCommon
