@@ -149,6 +149,7 @@ int main(int argc, char *argv[])
 	("snapshotstack",  po::value<bool>()->default_value(false),       "Save full 3D .nii.gz instead of mid-slice PNG")
 	("snapshotgrid",   po::value<bool>()->default_value(false),       "Overlay regular warped pixel-grid on snapshot panels (default off; when off, the real B-spline knot mesh is shown instead)")
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels for the deformation grid panel")
+	("snapshotlinewidth", po::value<double>()->default_value(0.0),    "Overlay line width in pixels (0 = auto)")
 	("version", "Print version and exit")
 	("overlappadding", po::value<unsigned int>()->default_value(1),
 		"Number of B-spline control points outside the image domain per side "
@@ -316,6 +317,7 @@ int main(int argc, char *argv[])
 	const bool        SNAPSHOTSTACK   = vm["snapshotstack"].as<bool>();
 	const bool        SNAPSHOTGRID    = vm["snapshotgrid"].as<bool>();
 	const unsigned int SNAPSHOTGRIDSP  = vm["snapshotgridspacing"].as<unsigned int>();
+	const double      SNAPSHOTLINEW   = vm["snapshotlinewidth"].as<double>();
 
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
@@ -851,6 +853,7 @@ int main(int argc, char *argv[])
 		snapObs->SetSaveStack(SNAPSHOTSTACK);
 		snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
 		snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
+		snapObs->SetOverlayLineWidthPixels(SNAPSHOTLINEW);
 		// When --snapshotgrid is off (the default for B-splines), show the
 		// real B-spline control-point lattice instead of a pixel grid.
 		snapObs->SetShowBSplineMesh(!SNAPSHOTGRID);

@@ -528,6 +528,8 @@ public:
     void SetShowDeformationGrid(bool b)                { m_ShowGrid = b; }
     /** Spacing of the regular grid lines (in voxels).  Default: 20. */
     void SetGridSpacingPixels(unsigned int s)           { m_GridSpacing = std::max(2u, s); }
+    /** Overlay line width in pixels.  Values <= 0 enable adaptive sizing. */
+    void SetOverlayLineWidthPixels(double w)           { m_LineWidthPixels = (w > 0.0) ? w : 0.0; }
     /** If true, draw the actual B-spline control-point lattice (warped by
      *  the current transform parameters) instead of a regular pixel grid.
      *  Only has effect when TTransform is itk::BSplineTransform<double,3,3>.
@@ -607,17 +609,17 @@ public:
                     (m_IterHistory[j] - m_IterHistory[0]) / iterRange * plotW);
                 int y1 = padT + plotH - static_cast<int>(
                     (S[j] - vMin) / vRange * plotH);
-                // Draw 2-pixel-thick line
-                DrawLineRGB(canvas.GetPointer(), W, H, x0, y0, x1, y1, c.r, c.g, c.b);
-                DrawLineRGB(canvas.GetPointer(), W, H, x0, y0+1, x1, y1+1, c.r, c.g, c.b);
+                DrawLineRGB(canvas.GetPointer(), W, H,
+                            x0, y0, x1, y1, c.r, c.g, c.b,
+                            2.2, 0.95);
             }
 
-            // Legend swatch (3-pixel-thick horizontal line) + text label
+            // Legend swatch + text label
             const int swX = padL + plotW - 130;
             const int swY = padT + 8 + static_cast<int>(s) * 14;
-            for (int dy = 0; dy < 3; ++dy)
-                DrawLineRGB(canvas.GetPointer(), W, H,
-                            swX, swY+dy, swX+22, swY+dy, c.r, c.g, c.b);
+            DrawLineRGB(canvas.GetPointer(), W, H,
+                        swX, swY + 1, swX + 22, swY + 1, c.r, c.g, c.b,
+                        3.0, 1.0);
             // Draw series name next to swatch
             if (s < m_SeriesNames.size())
                 DrawText(canvas.GetPointer(), W, H,
@@ -686,7 +688,8 @@ public:
 protected:
     IterationSnapshotObserver()
         : m_Every(1), m_SaveStack(false), m_ShowGrid(true),
-          m_GridSpacing(20), m_ShowBSplineMesh(false), m_IterCount(0),
+          m_GridSpacing(20), m_LineWidthPixels(0.0),
+          m_ShowBSplineMesh(false), m_IterCount(0),
           m_CSVHeaderWritten(false) {}
 
 private:
@@ -698,6 +701,7 @@ private:
     bool                               m_SaveStack;
     bool                               m_ShowGrid;
     unsigned int                       m_GridSpacing;
+    double                             m_LineWidthPixels;
     bool                               m_ShowBSplineMesh;
     unsigned long                      m_IterCount;
 
@@ -909,8 +913,7 @@ private:
     }
 
     /** Overlay green grid lines on an anatomical RGB slice.
-     *  Where gridMask > 0.5, the pixel becomes bright green;
-     *  elsewhere it keeps its original value. */
+     *  Grid intensity is used as alpha so resampled lines stay smooth. */
     typename RGBSliceType::Pointer
     OverlayGreenGrid(const RGBSliceType* anatomy,
                      const UCharSliceType* gridMask) const
@@ -920,19 +923,27 @@ private:
         out->SetRegions(anatomy->GetLargestPossibleRegion());
         out->Allocate();
 
+        auto effectiveMask = ExpandMaskForLineWidth(
+            gridMask,
+            ResolveOverlayLineWidthPixels(static_cast<double>(m_GridSpacing)));
+
         itk::ImageRegionConstIterator<RGBSliceType>   aIt(anatomy,  anatomy->GetLargestPossibleRegion());
-        itk::ImageRegionConstIterator<UCharSliceType>  gIt(gridMask, gridMask->GetLargestPossibleRegion());
+        itk::ImageRegionConstIterator<UCharSliceType>  gIt(effectiveMask, effectiveMask->GetLargestPossibleRegion());
         itk::ImageRegionIterator<RGBSliceType>         oIt(out,      out->GetLargestPossibleRegion());
 
         for (aIt.GoToBegin(), gIt.GoToBegin(), oIt.GoToBegin();
              !oIt.IsAtEnd(); ++aIt, ++gIt, ++oIt)
         {
-            if (gIt.Get() > 128)
+            const double alpha = 0.85 * (static_cast<double>(gIt.Get()) / 255.0);
+            if (alpha > 0.0)
             {
-                RGBPixelType px;
-                px.SetRed(0);
-                px.SetGreen(255);
-                px.SetBlue(0);
+                RGBPixelType px = aIt.Get();
+                px.SetRed(static_cast<UCharPixelType>(
+                    std::round(px.GetRed() * (1.0 - alpha))));
+                px.SetGreen(static_cast<UCharPixelType>(
+                    std::round(px.GetGreen() * (1.0 - alpha) + 255.0 * alpha)));
+                px.SetBlue(static_cast<UCharPixelType>(
+                    std::round(px.GetBlue() * (1.0 - alpha))));
                 oIt.Set(px);
             }
             else
@@ -940,6 +951,77 @@ private:
                 oIt.Set(aIt.Get());
             }
         }
+        out->DisconnectPipeline();
+        return out;
+    }
+
+    double ResolveOverlayLineWidthPixels(double nominalSpacingPixels) const
+    {
+        if (m_LineWidthPixels > 0.0)
+            return std::max(0.8, m_LineWidthPixels);
+        if (nominalSpacingPixels > 0.0)
+            return std::min(3.5, std::max(1.15, nominalSpacingPixels * 0.08));
+        return 1.25;
+    }
+
+    typename UCharSliceType::Pointer
+    ExpandMaskForLineWidth(const UCharSliceType* mask, double widthPixels) const
+    {
+        auto out = UCharSliceType::New();
+        out->CopyInformation(mask);
+        out->SetRegions(mask->GetLargestPossibleRegion());
+        out->Allocate();
+
+        const int radius = static_cast<int>(
+            std::floor(std::max(0.0, widthPixels - 1.25) * 0.5));
+
+        const auto region = mask->GetLargestPossibleRegion();
+        const auto size = region.GetSize();
+        const auto index = region.GetIndex();
+
+        if (radius <= 0)
+        {
+            itk::ImageRegionConstIterator<UCharSliceType> src(mask, region);
+            itk::ImageRegionIterator<UCharSliceType> dst(out, region);
+            for (src.GoToBegin(), dst.GoToBegin(); !dst.IsAtEnd(); ++src, ++dst)
+                dst.Set(src.Get());
+            out->DisconnectPipeline();
+            return out;
+        }
+
+        for (int y = 0; y < static_cast<int>(size[1]); ++y)
+        {
+            for (int x = 0; x < static_cast<int>(size[0]); ++x)
+            {
+                unsigned char maxValue = 0;
+                for (int oy = -radius; oy <= radius; ++oy)
+                {
+                    for (int ox = -radius; ox <= radius; ++ox)
+                    {
+                        if (ox * ox + oy * oy > radius * radius)
+                            continue;
+
+                        const int sx = x + ox;
+                        const int sy = y + oy;
+                        if (sx < 0 || sy < 0 ||
+                            sx >= static_cast<int>(size[0]) ||
+                            sy >= static_cast<int>(size[1]))
+                            continue;
+
+                        typename UCharSliceType::IndexType sampleIdx;
+                        sampleIdx[0] = index[0] + sx;
+                        sampleIdx[1] = index[1] + sy;
+                        maxValue = std::max(maxValue, mask->GetPixel(sampleIdx));
+                    }
+                }
+
+                typename UCharSliceType::IndexType outIdx;
+                outIdx[0] = index[0] + x;
+                outIdx[1] = index[1] + y;
+                out->SetPixel(outIdx, maxValue);
+            }
+        }
+
         out->DisconnectPipeline();
         return out;
     }
@@ -991,27 +1073,72 @@ private:
         return out;
     }
 
-    /** Bresenham line draw in green (or any RGB) directly on an RGBSliceType. */
-    static void DrawLineRGB(RGBSliceType* img, int W, int H,
-                            int x0, int y0, int x1, int y1,
-                            unsigned char r, unsigned char g, unsigned char b)
+    static double ClampUnit(double value)
     {
-        int dx =  std::abs(x1 - x0), sx = (x0 < x1) ? 1 : -1;
-        int dy = -std::abs(y1 - y0), sy = (y0 < y1) ? 1 : -1;
-        int err = dx + dy;
-        while (true)
+        return std::max(0.0, std::min(1.0, value));
+    }
+
+    static void BlendPixelRGB(RGBSliceType* img, int W, int H,
+                              int x, int y,
+                              unsigned char r, unsigned char g, unsigned char b,
+                              double alpha)
+    {
+        if (x < 0 || x >= W || y < 0 || y >= H || alpha <= 0.0)
+            return;
+
+        typename RGBSliceType::IndexType idx;
+        idx[0] = x; idx[1] = y;
+        RGBPixelType px = img->GetPixel(idx);
+        const double a = ClampUnit(alpha);
+        px.SetRed(static_cast<UCharPixelType>(
+            std::round(px.GetRed() * (1.0 - a) + r * a)));
+        px.SetGreen(static_cast<UCharPixelType>(
+            std::round(px.GetGreen() * (1.0 - a) + g * a)));
+        px.SetBlue(static_cast<UCharPixelType>(
+            std::round(px.GetBlue() * (1.0 - a) + b * a)));
+        img->SetPixel(idx, px);
+    }
+
+    static double DistancePointToSegment(double px, double py,
+                                         double x0, double y0,
+                                         double x1, double y1)
+    {
+        const double dx = x1 - x0;
+        const double dy = y1 - y0;
+        const double len2 = dx * dx + dy * dy;
+        if (len2 <= 1e-12)
+            return std::hypot(px - x0, py - y0);
+
+        const double t = ClampUnit(((px - x0) * dx + (py - y0) * dy) / len2);
+        const double projX = x0 + t * dx;
+        const double projY = y0 + t * dy;
+        return std::hypot(px - projX, py - projY);
+    }
+
+    /** Anti-aliased alpha-blended line draw directly on an RGBSliceType. */
+    static void DrawLineRGB(RGBSliceType* img, int W, int H,
+                            double x0, double y0, double x1, double y1,
+                            unsigned char r, unsigned char g, unsigned char b,
+                            double widthPixels = 1.0,
+                            double opacity = 1.0)
+    {
+        const double width = std::max(1.0, widthPixels);
+        const double radius = 0.5 * width;
+
+        const int minX = static_cast<int>(std::floor(std::min(x0, x1) - radius - 1.0));
+        const int maxX = static_cast<int>(std::ceil (std::max(x0, x1) + radius + 1.0));
+        const int minY = static_cast<int>(std::floor(std::min(y0, y1) - radius - 1.0));
+        const int maxY = static_cast<int>(std::ceil (std::max(y0, y1) + radius + 1.0));
+
+        for (int y = minY; y <= maxY; ++y)
         {
-            if (x0 >= 0 && x0 < W && y0 >= 0 && y0 < H)
+            for (int x = minX; x <= maxX; ++x)
             {
-                typename RGBSliceType::IndexType idx;
-                idx[0] = x0;  idx[1] = y0;
-                RGBPixelType px;  px.SetRed(r);  px.SetGreen(g);  px.SetBlue(b);
-                img->SetPixel(idx, px);
+                const double dist = DistancePointToSegment(
+                    x + 0.5, y + 0.5, x0, y0, x1, y1);
+                const double coverage = ClampUnit(radius + 0.5 - dist);
+                BlendPixelRGB(img, W, H, x, y, r, g, b, opacity * coverage);
             }
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 >= dy) { err += dy;  x0 += sx; }
-            if (e2 <= dx) { err += dx;  y0 += sy; }
         }
     }
 
@@ -1148,6 +1275,10 @@ private:
         const double nodeSpacingZ = coeffImg->GetSpacing()[2];
         const double zSpacingVox  = nodeSpacingZ / fixedImg->GetSpacing()[2];
         const double sliceTol     = std::max(1.5, zSpacingVox * 0.6);
+        const double nominalSpacingPx = std::min(
+            std::abs(coeffImg->GetSpacing()[0] / fixedImg->GetSpacing()[0]) * scaleX,
+            std::abs(coeffImg->GetSpacing()[1] / fixedImg->GetSpacing()[1]) * scaleY);
+        const double lineWidthPx = ResolveOverlayLineWidthPixels(nominalSpacingPx);
 
         // Precompute displaced positions projected to fixed-image 2D.
         // Displaced position = node physical position + raw coefficient.
@@ -1187,11 +1318,8 @@ private:
             const double midZ = (a.pz + b.pz) * 0.5;
             if (std::abs(midZ - sliceZd) > sliceTol) return;
             DrawLineRGB(rgbInOut.GetPointer(), W, H,
-                        static_cast<int>(std::round(a.px)),
-                        static_cast<int>(std::round(a.py)),
-                        static_cast<int>(std::round(b.px)),
-                        static_cast<int>(std::round(b.py)),
-                        0, 255, 0);
+                        a.px, a.py, b.px, b.py,
+                        0, 255, 0, lineWidthPx, 0.95);
         };
 
         for (unsigned int k = 0; k < nz; ++k)

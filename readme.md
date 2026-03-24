@@ -184,8 +184,9 @@ Usage notes:
 | `--snapshotdir` | `N` | Directory for iteration snapshots (`N` = off) |
 | `--snapshotevery` | `1` | Save a snapshot every N iterations |
 | `--snapshotstack` | `false` | `false`=mid-axial 2D PNG; `true`=full 3D `.nii.gz` |
-| `--snapshotgrid` | `true` | When enabled, snapshots include a deformation-grid overlay panel (default: on). For B-splines, this shows the actual B-spline control-point mesh. |
+| `--snapshotgrid` | `true` | When enabled, snapshots include a deformation-grid overlay panel. For B-splines, enabling this switches from the real knot mesh to a regular warped pixel grid. |
 | `--snapshotgridspacing` | `20` | Grid line spacing in voxels for the deformation overlay (`--snapshotgridspacing 10` → denser lines). Only applies when overlay is a regular deformation grid. |
+| `--snapshotlinewidth` | `0` | Overlay line width in pixels. `0` enables adaptive sizing for cleaner, less jagged grid/mesh lines. |
 
 Snapshots (PNG mode) now use a 2×2 layout with the following order:
 
@@ -196,7 +197,7 @@ Snapshots (PNG mode) now use a 2×2 layout with the following order:
 
 **Overlay behaviour:**
 - For **affine/similarity** transforms: bright green warped-grid overlay showing deformation field
-- For **B-splines** with `--snapshotgrid=true` (default): renders the actual cubic B-spline control-point mesh (knot lattice) as green lines. The mesh extends beyond the image domain to show all physical control points; a **dim yellow border** marks the original fixed image extent. The first snapshot prints a diagnostic message showing the B-spline mesh bounding box and padding amounts.
+- For **B-splines** with `--snapshotgrid=false` (default in the current implementation): renders the actual cubic B-spline control-point mesh (knot lattice) as green lines. The mesh extends beyond the image domain to show all physical control points; a **dim yellow border** marks the original fixed image extent. The first snapshot prints a diagnostic message showing the B-spline mesh bounding box and padding amounts.
 
 All four panels are padded to contain the full B-spline mesh when visible, allowing inspection of out-of-domain control points.
 

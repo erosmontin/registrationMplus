@@ -137,6 +137,7 @@ int main( int argc, char *argv[] )
 	("snapshotstack",  po::value<bool>()->default_value(false),       "Save full 3D .nii.gz instead of mid-slice PNG")
 	("snapshotgrid",   po::value<bool>()->default_value(true),        "Overlay warped grid on snapshot panels (default on)")
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels")
+	("snapshotlinewidth", po::value<double>()->default_value(0.0),    "Overlay line width in pixels (0 = auto)")
 	("version", "Print version and exit")
 	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
 	("modality", po::value<std::string>()->default_value("custom"),
@@ -220,6 +221,7 @@ int main( int argc, char *argv[] )
 	const bool        SNAPSHOTSTACK   = vm["snapshotstack"].as<bool>();
 	const bool        SNAPSHOTGRID    = vm["snapshotgrid"].as<bool>();
 	const unsigned int SNAPSHOTGRIDSP  = vm["snapshotgridspacing"].as<unsigned int>();
+	const double      SNAPSHOTLINEW   = vm["snapshotlinewidth"].as<double>();
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 	typedef itk::Image<short, ImageDimension> LabelImageType;
@@ -639,6 +641,7 @@ if (method == "translation") {
 	  snapObs->SetSaveStack(SNAPSHOTSTACK);
 	  snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
 	  snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
+	  snapObs->SetOverlayLineWidthPixels(SNAPSHOTLINEW);
 	  snapObs->SetMetricValuesGetter([metric]() -> std::map<std::string,double> {
 		  return {
 			  {"Total", metric->GetLastValTotal()},
