@@ -81,10 +81,15 @@ namespace itk
 		m_ScaleNC = 1.0; m_ScaleLabel = 1.0;
 		m_ScaleGD = 1.0; m_ScaleNMI = 1.0;
 
-		// label metric defaults
-		m_LabelKappa           = 0.0;
-		m_LabelKappaDerivative = 0.0;
-		m_LabelNumberOfSamples = 20000;
+			// label metric defaults
+			m_LabelKappa           = 0.0;
+			m_LabelKappaDerivative = 0.0;
+			m_LabelNumberOfSamples = 20000;
+			m_LabelDistanceMax     = 20.0;
+			m_LabelUseNarrowBand   = false;
+			m_LabelNarrowBandWidth = 5.0;
+			m_LabelUseHuber        = false;
+			m_LabelHuberDelta      = 0.25;
 
 		// per-sub-metric cached values
 		m_LastValMI    = 0.0;
@@ -1269,6 +1274,48 @@ namespace itk
 	}
 
 	template <class TFixedImage, class TMovingImage>
+	bool
+	Mplus<TFixedImage, TMovingImage>::LabelSampleInBand(
+	    double dFixed, double dMoving) const
+	{
+	    if (!m_LabelUseNarrowBand) return true;
+	    const double w = std::max(0.0, m_LabelNarrowBandWidth);
+	    return (std::abs(dFixed) <= w) || (std::abs(dMoving) <= w);
+	}
+
+	template <class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage, TMovingImage>::LabelClampDistance(double d) const
+	{
+	    const double dmax = std::max(1e-6, m_LabelDistanceMax);
+	    return std::max(-dmax, std::min(dmax, d));
+	}
+
+	template <class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage, TMovingImage>::LabelLoss(double residualNorm) const
+	{
+	    if (!m_LabelUseHuber) return residualNorm * residualNorm;
+
+	    const double delta = std::max(1e-8, m_LabelHuberDelta);
+	    const double a = std::abs(residualNorm);
+	    if (a <= delta) return residualNorm * residualNorm;
+	    return 2.0 * delta * a - delta * delta;
+	}
+
+	template <class TFixedImage, class TMovingImage>
+	double
+	Mplus<TFixedImage, TMovingImage>::LabelLossDerivative(double residualNorm) const
+	{
+	    if (!m_LabelUseHuber) return 2.0 * residualNorm;
+
+	    const double delta = std::max(1e-8, m_LabelHuberDelta);
+	    const double a = std::abs(residualNorm);
+	    if (a <= delta) return 2.0 * residualNorm;
+	    return (residualNorm >= 0.0) ? 2.0 * delta : -2.0 * delta;
+	}
+
+	template <class TFixedImage, class TMovingImage>
 	void
 	Mplus<TFixedImage, TMovingImage>::InitializeLabelMetric()
 	{
@@ -1326,6 +1373,8 @@ namespace itk
 	    std::cout << "[LabelMetric] Initializing distance maps for "
 	              << labelSet.size() << " label(s)..." << std::endl;
 
+	    const bool needLabelDerivatives = (m_LabelKappaDerivative != 0.0);
+
 	    for (auto L : labelSet)
 	    {
 	        const unsigned long long nFixed =
@@ -1350,16 +1399,19 @@ namespace itk
 	        auto movingBin = this->BuildBinaryFromLabel(
 	            m_MovingLabelMap, mvSize, mvSpc, mvOrg, mvDir, L);
 	        m_MovingDistMaps[L]     = this->ComputeSignedDist(movingBin);
-	        m_MovingDistGradMaps[L] = this->ComputeGradient(m_MovingDistMaps[L]);
 
 	        // Interpolators for moving distance map and its gradient
 	        auto di = DistInterpType::New();
 	        di->SetInputImage(m_MovingDistMaps[L]);
 	        m_MovingDistInterps[L] = di;
 
-	        auto gi = GradInterpType::New();
-	        gi->SetInputImage(m_MovingDistGradMaps[L]);
-	        m_MovingDistGradInterps[L] = gi;
+	        if (needLabelDerivatives)
+	        {
+	            m_MovingDistGradMaps[L] = this->ComputeGradient(m_MovingDistMaps[L]);
+	            auto gi = GradInterpType::New();
+	            gi->SetInputImage(m_MovingDistGradMaps[L]);
+	            m_MovingDistGradInterps[L] = gi;
+	        }
 
 	        m_LabelValues.push_back(L);
 	        std::cout << "[LabelMetric]   Label " << static_cast<int>(L) << " done." << std::endl;
@@ -1386,6 +1438,7 @@ namespace itk
 	    const unsigned long totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
 	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
+	    const double distNorm = std::max(1e-6, m_LabelDistanceMax);
 	    unsigned int stride = 1;
 	    if (sampleTarget < totalPix)
 	    {
@@ -1424,21 +1477,24 @@ namespace itk
 
 	            if (!movingDistInterp->IsInsideBuffer(movingPt)) continue;
 
-	            const double dFixed  = static_cast<double>(it.Get());
-	            const double dMoving = movingDistInterp->Evaluate(movingPt);
-	            if (!std::isfinite(dFixed) || !std::isfinite(dMoving)) continue;
+	            const double dFixedRaw  = static_cast<double>(it.Get());
+	            const double dMovingRaw = movingDistInterp->Evaluate(movingPt);
+	            if (!std::isfinite(dFixedRaw) || !std::isfinite(dMovingRaw)) continue;
+	            if (!this->LabelSampleInBand(dFixedRaw, dMovingRaw)) continue;
 
-	            const double diff    = dFixed - dMoving;
-	            if (!std::isfinite(diff)) continue;
-	            const double sqDiff = diff * diff;
-	            if (!std::isfinite(sqDiff)) continue;
+	            const double dFixed = this->LabelClampDistance(dFixedRaw);
+	            const double dMoving = this->LabelClampDistance(dMovingRaw);
+	            const double residualNorm = (dFixed - dMoving) / distNorm;
+	            if (!std::isfinite(residualNorm)) continue;
+	            const double loss = this->LabelLoss(residualNorm);
+	            if (!std::isfinite(loss)) continue;
 
-	            sumSqDiff += sqDiff;
+	            sumSqDiff += loss;
 	            ++n;
 
 	            // Also accumulate binary Dice stats (dFixed<0 → inside label)
-	            bool inF = (dFixed  <= 0.0);
-	            bool inM = (dMoving <= 0.0);
+	            bool inF = (dFixedRaw  <= 0.0);
+	            bool inM = (dMovingRaw <= 0.0);
 	            if (inF) ++countF;
 	            if (inM) ++countM;
 	            if (inF && inM) ++countIntersect;
@@ -1477,6 +1533,8 @@ namespace itk
 	    const unsigned long totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
 	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
+	    const double distNorm = std::max(1e-6, m_LabelDistanceMax);
+	    const double dmax = std::max(1e-6, m_LabelDistanceMax);
 	    unsigned int stride = 1;
 	    if (sampleTarget < totalPix)
 	    {
@@ -1515,11 +1573,19 @@ namespace itk
 	            if (!movingDistInterp->IsInsideBuffer(movingPt) ||
 	                !gradInterp->IsInsideBuffer(movingPt)) continue;
 
-	            const double dFixed   = static_cast<double>(it.Get());
-	            const double dMoving  = movingDistInterp->Evaluate(movingPt);
-	            const double residual = dFixed - dMoving;
-	            if (!std::isfinite(dFixed) || !std::isfinite(dMoving) ||
-	                !std::isfinite(residual)) continue;
+	            const double dFixedRaw  = static_cast<double>(it.Get());
+	            const double dMovingRaw = movingDistInterp->Evaluate(movingPt);
+	            if (!std::isfinite(dFixedRaw) || !std::isfinite(dMovingRaw)) continue;
+	            if (!this->LabelSampleInBand(dFixedRaw, dMovingRaw)) continue;
+
+	            const double dFixed = this->LabelClampDistance(dFixedRaw);
+	            const double dMoving = this->LabelClampDistance(dMovingRaw);
+	            const double residualNorm = (dFixed - dMoving) / distNorm;
+	            if (!std::isfinite(residualNorm)) continue;
+	            const double dLossdResidualNorm = this->LabelLossDerivative(residualNorm);
+	            if (!std::isfinite(dLossdResidualNorm)) continue;
+	            const double clampMovingFactor = (std::abs(dMovingRaw) <= dmax) ? 1.0 : 0.0;
+	            if (clampMovingFactor == 0.0) continue;
 
 	            // Gradient of moving distance map at the transformed point
 	            const auto gradVec = gradInterp->Evaluate(movingPt);
@@ -1534,7 +1600,8 @@ namespace itk
 	                double dot = 0.0;
 	                for (unsigned int d = 0; d < TFixedImage::ImageDimension; ++d)
 	                    dot += static_cast<double>(gradVec[d]) * jac(d, j);
-	                const double contrib = -2.0 * residual * dot;
+	                const double contrib = -(dLossdResidualNorm / distNorm)
+	                                     * clampMovingFactor * dot;
 	                if (std::isfinite(contrib))
 	                    localDeriv[j] += contrib;
 	            }
@@ -1572,6 +1639,8 @@ namespace itk
 	    const unsigned long totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
 	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
+	    const double distNorm = std::max(1e-6, m_LabelDistanceMax);
+	    const double dmax = std::max(1e-6, m_LabelDistanceMax);
 	    unsigned int stride = 1;
 	    if (sampleTarget < totalPix) {
 	        stride = static_cast<unsigned int>(
@@ -1612,19 +1681,28 @@ namespace itk
 
 	            if (!movingDistInterp->IsInsideBuffer(movingPt)) continue;
 
-	            const double dFixed  = static_cast<double>(it.Get());
-	            const double dMoving = movingDistInterp->Evaluate(movingPt);
-	            const double residual = dFixed - dMoving;
-	            if (!std::isfinite(dFixed) || !std::isfinite(dMoving) ||
-	                !std::isfinite(residual)) continue;
+	            const double dFixedRaw  = static_cast<double>(it.Get());
+	            const double dMovingRaw = movingDistInterp->Evaluate(movingPt);
+	            if (!std::isfinite(dFixedRaw) || !std::isfinite(dMovingRaw)) continue;
+	            if (!this->LabelSampleInBand(dFixedRaw, dMovingRaw)) continue;
+
+	            const double dFixed = this->LabelClampDistance(dFixedRaw);
+	            const double dMoving = this->LabelClampDistance(dMovingRaw);
+	            const double residualNorm = (dFixed - dMoving) / distNorm;
+	            if (!std::isfinite(residualNorm)) continue;
 
 	            // Value accumulation
-	            const double sqDiff = residual * residual;
-	            if (!std::isfinite(sqDiff)) continue;
-	            sumSqDiff += sqDiff;
+	            const double loss = this->LabelLoss(residualNorm);
+	            if (!std::isfinite(loss)) continue;
+	            sumSqDiff += loss;
 
 	            // Derivative accumulation
 	            if (kappaD != 0.0 && gradInterp->IsInsideBuffer(movingPt)) {
+	                const double dLossdResidualNorm = this->LabelLossDerivative(residualNorm);
+	                if (!std::isfinite(dLossdResidualNorm)) continue;
+	                const double clampMovingFactor = (std::abs(dMovingRaw) <= dmax) ? 1.0 : 0.0;
+	                if (clampMovingFactor == 0.0) continue;
+
 	                const auto gradVec = gradInterp->Evaluate(movingPt);
 	                TransformJacobianType jac(TFixedImage::ImageDimension, nParams);
 	                this->m_Transform->ComputeJacobianWithRespectToParameters(fixedPt, jac);
@@ -1632,7 +1710,8 @@ namespace itk
 	                    double dot = 0.0;
 	                    for (unsigned int d = 0; d < TFixedImage::ImageDimension; ++d)
 	                        dot += static_cast<double>(gradVec[d]) * jac(d, j);
-	                    const double contrib = -2.0 * residual * dot;
+	                    const double contrib = -(dLossdResidualNorm / distNorm)
+	                                         * clampMovingFactor * dot;
 	                    if (std::isfinite(contrib))
 	                        localDeriv[j] += contrib;
 	                }
@@ -1640,8 +1719,8 @@ namespace itk
 
 	            ++n;
 
-	            bool inF = (dFixed  <= 0.0);
-	            bool inM = (dMoving <= 0.0);
+	            bool inF = (dFixedRaw  <= 0.0);
+	            bool inM = (dMovingRaw <= 0.0);
 	            if (inF) ++countF;
 	            if (inM) ++countM;
 	            if (inF && inM) ++countIntersect;

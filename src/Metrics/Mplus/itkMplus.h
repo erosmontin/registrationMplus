@@ -208,8 +208,27 @@ public:
 	const LabelWeightMapType & GetLabelKappaWeights()          const  { return m_LabelKappaWeights; }
 	const LabelWeightMapType & GetLabelKappaDerivativeWeights() const { return m_LabelKappaDerivWeights; }
 
-	itkSetMacro(LabelNumberOfSamples, unsigned int);
-	itkGetMacro(LabelNumberOfSamples, unsigned int);
+		itkSetMacro(LabelNumberOfSamples, unsigned int);
+		itkGetMacro(LabelNumberOfSamples, unsigned int);
+
+		/** Clamp signed distances to [-LabelDistanceMax, LabelDistanceMax] before
+		 *  evaluating the label loss. Units are millimetres when spacing is in mm. */
+		itkSetMacro(LabelDistanceMax, double);
+		itkGetMacro(LabelDistanceMax, double);
+
+		/** Optional narrow-band mode: only voxels close to either boundary contribute. */
+		itkSetMacro(LabelUseNarrowBand, bool);
+		itkGetMacro(LabelUseNarrowBand, bool);
+		itkBooleanMacro(LabelUseNarrowBand);
+		itkSetMacro(LabelNarrowBandWidth, double);
+		itkGetMacro(LabelNarrowBandWidth, double);
+
+		/** Optional robust Huber loss on normalized residuals. */
+		itkSetMacro(LabelUseHuber, bool);
+		itkGetMacro(LabelUseHuber, bool);
+		itkBooleanMacro(LabelUseHuber);
+		itkSetMacro(LabelHuberDelta, double);
+		itkGetMacro(LabelHuberDelta, double);
 
 	/** Read-only access to the per-label Dice coefficients stored after
 	 *  the most recent GetKappaValue() call. Key = label value, value ∈ [0,1]. */
@@ -383,11 +402,16 @@ protected:
 	// ── label metric members ──────────────────────────────────────────────────
 	LabelImageConstPointer  m_FixedLabelMap;
 	LabelImageConstPointer  m_MovingLabelMap;
-	double                  m_LabelKappa;
-	double                  m_LabelKappaDerivative;
-	LabelWeightMapType      m_LabelKappaWeights;
-	LabelWeightMapType      m_LabelKappaDerivWeights;
-	unsigned int            m_LabelNumberOfSamples;
+		double                  m_LabelKappa;
+		double                  m_LabelKappaDerivative;
+		LabelWeightMapType      m_LabelKappaWeights;
+		LabelWeightMapType      m_LabelKappaDerivWeights;
+		unsigned int            m_LabelNumberOfSamples;
+		double                  m_LabelDistanceMax;
+		bool                    m_LabelUseNarrowBand;
+		double                  m_LabelNarrowBandWidth;
+		bool                    m_LabelUseHuber;
+		double                  m_LabelHuberDelta;
 
 	// Distance maps and interpolators per label (computed once in Initialize)
 	typedef std::map<LabelPixelType, typename TFixedImage::Pointer>        DistMapContainer;
@@ -481,13 +505,18 @@ private:
 	ComputeSignedDist(const typename TFixedImage::Pointer & binaryImage) const;
 
 	/** Gradient of a scalar float image (via GradientRecursiveGaussianImageFilter). */
-	GradientImagePointer
-	ComputeGradient(const typename TFixedImage::Pointer & image) const;
+		GradientImagePointer
+		ComputeGradient(const typename TFixedImage::Pointer & image) const;
+
+		bool LabelSampleInBand(double dFixed, double dMoving) const;
+		double LabelClampDistance(double d) const;
+		double LabelLoss(double residualNorm) const;
+		double LabelLossDerivative(double residualNorm) const;
 
 
 
 
-};
+	};
 } // end namespace itk
 
 #ifndef ITK_MANUAL_INSTANTIATION

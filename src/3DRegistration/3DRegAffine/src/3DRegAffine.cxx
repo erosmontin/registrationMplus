@@ -125,6 +125,11 @@ int main( int argc, char *argv[] )
 	("labelkappavec",  po::value<std::string>()->default_value(""),   "Per-label kappa (value) weights: 'L1:w1,L2:w2,...'")
 	("labelkappaderivvec", po::value<std::string>()->default_value(""),"Per-label kappa (derivative) weights: 'L1:w1,L2:w2,...'")
 	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric samples: fraction (0.1 = 10%) or absolute count (>1)")
+	("labeldistmax",   po::value<double>()->default_value(20.0), "Clamp signed distances to +/- this value (mm) before label loss")
+	("labelnarrowband",po::value<bool>()->default_value(false), "Use narrow-band label loss near boundaries only")
+	("labelbandwidth", po::value<double>()->default_value(5.0), "Narrow-band half-width in mm")
+	("labelhuber",     po::value<bool>()->default_value(false), "Use Huber loss for normalized label residuals")
+	("labelhuberdelta",po::value<double>()->default_value(0.25), "Huber delta (normalized units)")
 	("labelreport",    po::value<int>()->default_value(1),            "Report Dice every N iterations (0 = off)")
 	("snapshotdir",    po::value<std::string>()->default_value("N"), "Directory for iteration snapshots (N = off)")
 	("snapshotevery",  po::value<int>()->default_value(1),            "Save snapshot every N iterations")
@@ -178,6 +183,11 @@ int main( int argc, char *argv[] )
 	const double      LABELKAPPA      = vm["labelkappa"].as<double>();
 	const double      LABELKAPPADERIV = vm["labelkappaderiv"].as<double>();
 	const double LABELSAMPLES   = vm["labelsamples"].as<double>();
+	const double      LABELDISTMAX    = vm["labeldistmax"].as<double>();
+	const bool        LABELNARROWBAND = vm["labelnarrowband"].as<bool>();
+	const double      LABELBANDWIDTH  = vm["labelbandwidth"].as<double>();
+	const bool        LABELHUBER      = vm["labelhuber"].as<bool>();
+	const double      LABELHUBERDELTA = vm["labelhuberdelta"].as<double>();
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 
@@ -489,6 +499,11 @@ if (method == "translation") {
 		metric->SetLabelKappa(LABELKAPPA);
 		metric->SetLabelKappaDerivative(LABELKAPPADERIV);
 		metric->SetLabelNumberOfSamples(numberOfSamplesLabel);
+		metric->SetLabelDistanceMax(LABELDISTMAX);
+		metric->SetLabelUseNarrowBand(LABELNARROWBAND);
+		metric->SetLabelNarrowBandWidth(LABELBANDWIDTH);
+		metric->SetLabelUseHuber(LABELHUBER);
+		metric->SetLabelHuberDelta(LABELHUBERDELTA);
 		if (!LABELKAPPAVEC.empty())      metric->SetLabelKappaWeights(LABELKAPPAVEC);
 		if (!LABELKAPPADERIVVEC.empty()) metric->SetLabelKappaDerivativeWeights(LABELKAPPADERIVVEC);
 	}

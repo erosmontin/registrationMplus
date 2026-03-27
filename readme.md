@@ -236,9 +236,18 @@ When `--modality` is set to `multimodal` or `singlemodal`, sensible default weig
 | `--labelkappavec` | `""` | Per-label metric weights: `"L1:w1,L2:w2,..."` |
 | `--labelkappaderivvec` | `""` | Per-label derivative weights: `"L1:w1,L2:w2,..."` |
 | `--labelsamples` | `0.1` | Label metric percentage of pixels used to evaluate the label term (0.1 = 10%) |
+| `--labeldistmax` | `20.0` | Clamp signed distances to ±this value (mm) before label loss evaluation |
+| `--labelnarrowband` | `false` | Restrict label loss to voxels close to either label boundary |
+| `--labelbandwidth` | `5.0` | Narrow-band half-width (mm) used when `--labelnarrowband=true` |
+| `--labelhuber` | `false` | Use robust Huber loss on normalized label residuals |
+| `--labelhuberdelta` | `0.25` | Huber transition threshold in normalized residual units |
 | `--labelreport` | `1` | Print per-label Dice coefficients every N iterations (0 = off) |
 
 When both label maps are provided and all kappa weights are `0.0` (the default), the label term acts as a **monitoring-only** observer — it prints Dice coefficients at each iteration without affecting the optimisation.
+
+The label residual is now normalized and bounded before loss evaluation: both fixed and moving signed distances are clamped to `[-labeldistmax, +labeldistmax]`, then their difference is divided by `labeldistmax`. This keeps the raw label metric numerically stable (avoids exploding values when labels are far apart) and makes `--labelkappa` easier to tune across datasets.
+
+Performance note: if `--labelkappaderiv 0`, moving distance-map gradients are skipped, which significantly reduces label-metric initialization cost.
 
 ---
 
@@ -422,6 +431,19 @@ Uses a cubic `BSplineTransform` with the `LBFGSBOptimizer` (quasi-Newton). The n
   --labelkappa 0.1 --labelkappaderiv 0.1 \
   --labelkappavec "1:1.0,2:0.5,3:0.5" \
   --labelkappaderivvec "1:1.0,2:0.5,3:0.5" \
+  --labelsamples 0.1 --labelreport 10
+```
+
+**Example — robust, bounded label guidance (recommended when label term dominates):**
+```bash
+3DRegBsplines \
+  -f fixed.nii.gz -m moving.nii.gz -o registered.nii.gz \
+  --gridresolution 40 --numberofthreads 4 \
+  -a 1.0 -A 1.0 \
+  --fixedlabelmap fixedLabels.nii.gz --movinglabelmap movingLabels.nii.gz \
+  --labelkappa 0.2 --labelkappaderiv 0.2 \
+  --labeldistmax 20 --labelnarrowband true --labelbandwidth 5 \
+  --labelhuber true --labelhuberdelta 0.25 \
   --labelsamples 0.1 --labelreport 10
 ```
 

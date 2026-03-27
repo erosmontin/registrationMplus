@@ -227,6 +227,16 @@ inline void WireLabelMaps(MetricPointer & metric, const po::variables_map & vm)
         static_cast<unsigned int>(fixTmp->GetLargestPossibleRegion().GetNumberOfPixels());
     metric->SetLabelNumberOfSamples(
         ResolveLabelSampleCount(vm["labelsamples"].template as<double>(), numberOfPixels));
+    if (vm.count("labeldistmax"))
+        metric->SetLabelDistanceMax(vm["labeldistmax"].template as<double>());
+    if (vm.count("labelnarrowband"))
+        metric->SetLabelUseNarrowBand(vm["labelnarrowband"].template as<bool>());
+    if (vm.count("labelbandwidth"))
+        metric->SetLabelNarrowBandWidth(vm["labelbandwidth"].template as<double>());
+    if (vm.count("labelhuber"))
+        metric->SetLabelUseHuber(vm["labelhuber"].template as<bool>());
+    if (vm.count("labelhuberdelta"))
+        metric->SetLabelHuberDelta(vm["labelhuberdelta"].template as<double>());
 
     const auto kappaVec      = ParseLabelWeights(vm["labelkappavec"].template as<std::string>());
     const auto kappaDerivVec = ParseLabelWeights(vm["labelkappaderivvec"].template as<std::string>());

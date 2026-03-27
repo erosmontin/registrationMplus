@@ -355,6 +355,8 @@ Studholme C., Hill D.L.G., Hawkes D.J. (1999). *An overlap invariant entropy mea
 
 When fixed and moving label maps (segmentations) are available, this sub-metric computes the MSE of signed distance maps for each label, penalising misalignment of anatomical structures. Per-label weights allow fine control, downweighting uncertain or irrelevant structures.
 
+To improve numerical stability and make weights portable across datasets, signed distances are clamped and normalized before the loss is applied. Optional narrow-band sampling can focus the metric near boundaries, and an optional Huber loss can reduce outlier influence.
+
 **When to use:** Any modality when anatomical segmentations are available; particularly useful for brain registration where major structures (ventricles, tumour, cortex) can anchor the deformation.
 
 | Flag | Default | Description |
@@ -366,7 +368,18 @@ When fixed and moving label maps (segmentations) are available, this sub-metric 
 | `--labelkappavec` | "" | Per-label value weights: `L1:w1,L2:w2,...` |
 | `--labelkappaderivvec` | "" | Per-label derivative weights |
 | `--labelsamples` | 0.1 | Fraction of pixels sampled |
+| `--labeldistmax` | 20.0 | Clamp signed distances to ±this value (mm) before loss |
+| `--labelnarrowband` | false | Use only samples within a distance band from either boundary |
+| `--labelbandwidth` | 5.0 | Narrow-band half-width (mm) |
+| `--labelhuber` | false | Use Huber loss on normalized residuals |
+| `--labelhuberdelta` | 0.25 | Huber threshold in normalized units |
 | `--labelreport` | 1 | Report Dice coefficient every N iterations (0 = off) |
+
+Label loss details:
+
+- Signed distances are computed from fixed and moving label maps at the internal working resolution.
+- Distances are clamped to `[-labeldistmax,+labeldistmax]`, residual is normalized by `labeldistmax`, then squared loss (default) or Huber loss is applied.
+- If `labelkappaderiv=0`, moving distance-map gradients are not precomputed, substantially reducing initialization time.
 
 ---
 
@@ -406,7 +419,7 @@ The main metric for mode 2 is selected with `--mainmetric`:
 | CT–MR brain | `multimodal` | `--alpha 1.0 --lambda 0.5 --mattesnumberofbins 64` |
 | MRI–MRI longitudinal | `singlemodal` | `--nu 1.0 --yota 0.5 --msepercentage 0.2` |
 | CT–PET | `multimodal` | `--mattespercentage 0.2 --sigma 0.3` (add NMI for stability) |
-| Anatomy-guided (with segmentations) | `custom` | `--labelkappa 0.5` combined with `multimodal` or `singlemodal` weights |
+| Anatomy-guided (with segmentations) | `custom` | `--labelkappa 0.5 --labeldistmax 20`; optionally `--labelnarrowband true --labelbandwidth 5` |
 | Edge-sensitive monomodal | `custom` | `--nu 1.0 --rho 0.5 --yota 0.3` |
 
 ---

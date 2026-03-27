@@ -243,6 +243,26 @@
           "type": "number", "minimum": 0, "maximum": 1,
           "description": "Label metric percentage of pixels used (--labelsamples). Default: 0.1 (10%)"
         },
+        "distance_max": {
+          "type": "number", "exclusiveMinimum": 0,
+          "description": "Clamp signed distances to +/- this value in mm before label loss (--labeldistmax). Default: 20.0"
+        },
+        "narrow_band": {
+          "type": "boolean",
+          "description": "Restrict label loss to a boundary-focused band (--labelnarrowband). Default: false"
+        },
+        "band_width": {
+          "type": "number", "minimum": 0,
+          "description": "Narrow-band half-width in mm used when narrow_band=true (--labelbandwidth). Default: 5.0"
+        },
+        "huber": {
+          "type": "boolean",
+          "description": "Use robust Huber loss for normalized label residuals (--labelhuber). Default: false"
+        },
+        "huber_delta": {
+          "type": "number", "exclusiveMinimum": 0,
+          "description": "Huber transition threshold in normalized units (--labelhuberdelta). Default: 0.25"
+        },
         "report_every": {
           "type": "integer", "minimum": 0,
           "description": "Print Dice every N iterations (--labelreport). 0=off. Default: 1"
