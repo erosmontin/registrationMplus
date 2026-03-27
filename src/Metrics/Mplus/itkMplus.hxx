@@ -10,6 +10,7 @@
 #include "itkImageRegionIterator.h"
 #include <vector>
 #include <algorithm>
+#include <cmath>
 // >>>
 
 // <<< label metric support
@@ -967,6 +968,7 @@ namespace itk
 		               rawDerD(nParams), rawDerE(nParams), rawDerF(nParams), rawDerG(nParams);
 		rawDerA.Fill(0.0); rawDerB.Fill(0.0); rawDerC.Fill(0.0);
 		rawDerD.Fill(0.0); rawDerE.Fill(0.0); rawDerF.Fill(0.0); rawDerG.Fill(0.0);
+		bool labelValueAlreadyWeighted = false;
 
 		// MA (Mattes MI)
 		if (this->m_Alpha != 0.0 && this->m_AlphaDerivative != 0.0)
@@ -1013,8 +1015,10 @@ namespace itk
 		    && m_FixedLabelMap && m_MovingLabelMap) {
 			if (this->m_LabelKappa != 0.0 && this->m_LabelKappaDerivative != 0.0)
 				this->GetKappaValueAndDerivative(parameters, rawValF, rawDerF);
-			else if (this->m_LabelKappa != 0.0)
+			else if (this->m_LabelKappa != 0.0) {
 				rawValF = this->GetKappaValue(parameters);
+				labelValueAlreadyWeighted = true;
+			}
 			else
 				this->GetKappaDerivative(parameters, rawDerF);
 		}
@@ -1033,7 +1037,8 @@ namespace itk
 		this->m_LastValMSE   = this->m_Nu     * rawValC;
 		this->m_LastValGD    = this->m_Rho    * rawValD;
 		this->m_LastValNC    = this->m_Yota   * rawValE;
-		this->m_LastValLabel = this->m_LabelKappa * rawValF;
+		this->m_LastValLabel = labelValueAlreadyWeighted ? rawValF
+		                                                : this->m_LabelKappa * rawValF;
 		this->m_LastValNMI   = this->m_Sigma  * rawValG;
 		this->m_LastValTotal = this->m_LastValMI + this->m_LastValNGF
 		                     + this->m_LastValMSE + this->m_LastValGD
@@ -1087,10 +1092,11 @@ namespace itk
 				}
 			}
 
-			Value = this->m_Alpha * rawValA + this->m_Lambda * rawValB
-			      + this->m_Nu * rawValC + this->m_Rho * rawValD
-			      + this->m_Yota * rawValE + this->m_LabelKappa * rawValF
-			      + this->m_Sigma * rawValG;
+				Value = this->m_Alpha * rawValA + this->m_Lambda * rawValB
+				      + this->m_Nu * rawValC + this->m_Rho * rawValD
+				      + this->m_Yota * rawValE
+				      + (labelValueAlreadyWeighted ? rawValF : this->m_LabelKappa * rawValF)
+				      + this->m_Sigma * rawValG;
 		}
 		else if (this->m_DerivativeMode == 2)
 		{
@@ -1139,13 +1145,14 @@ namespace itk
 				              + this->m_LabelKappaDerivative * this->m_ScaleLabel * rawDerF[p]
 				              + this->m_SigmaDerivative  * this->m_ScaleNMI   * rawDerG[p];
 
-			Value = this->m_ScaleMA  * this->m_Alpha  * rawValA
-			      + this->m_ScaleNGF * this->m_Lambda * rawValB
-			      + this->m_ScaleMSE * this->m_Nu     * rawValC
-			      + this->m_ScaleGD  * this->m_Rho    * rawValD
-			      + this->m_ScaleNC  * this->m_Yota   * rawValE
-			      + this->m_ScaleLabel * this->m_LabelKappa * rawValF
-			      + this->m_ScaleNMI * this->m_Sigma  * rawValG;
+				Value = this->m_ScaleMA  * this->m_Alpha  * rawValA
+				      + this->m_ScaleNGF * this->m_Lambda * rawValB
+				      + this->m_ScaleMSE * this->m_Nu     * rawValC
+				      + this->m_ScaleGD  * this->m_Rho    * rawValD
+				      + this->m_ScaleNC  * this->m_Yota   * rawValE
+				      + this->m_ScaleLabel
+				        * (labelValueAlreadyWeighted ? rawValF : this->m_LabelKappa * rawValF)
+				      + this->m_ScaleNMI * this->m_Sigma  * rawValG;
 		}
 		else
 		{
@@ -1161,10 +1168,11 @@ namespace itk
 				              + this->m_LabelKappaDerivative * rawDerF[p]
 				              + this->m_SigmaDerivative  * rawDerG[p];
 
-			Value = this->m_Alpha * rawValA + this->m_Lambda * rawValB
-			      + this->m_Nu * rawValC + this->m_Rho * rawValD
-			      + this->m_Yota * rawValE + this->m_LabelKappa * rawValF
-			      + this->m_Sigma * rawValG;
+				Value = this->m_Alpha * rawValA + this->m_Lambda * rawValB
+				      + this->m_Nu * rawValC + this->m_Rho * rawValD
+				      + this->m_Yota * rawValE
+				      + (labelValueAlreadyWeighted ? rawValF : this->m_LabelKappa * rawValF)
+				      + this->m_Sigma * rawValG;
 		}
 	}
 
@@ -1275,23 +1283,33 @@ namespace itk
 	    if (!m_FixedLabelMap || !m_MovingLabelMap) return;
 	    if (m_LabelKappa == 0.0 && m_LabelKappaDerivative == 0.0) return;
 
-	    // Collect unique non-zero labels from both maps
+	    // Collect unique non-zero labels from both maps and count support
 	    std::set<LabelPixelType> labelSet;
+	    std::map<LabelPixelType, unsigned long long> fixedCounts;
+	    std::map<LabelPixelType, unsigned long long> movingCounts;
 	    {
 	        itk::ImageRegionConstIterator<LabelImageType> it(
 	            m_FixedLabelMap, m_FixedLabelMap->GetLargestPossibleRegion());
 	        for (; !it.IsAtEnd(); ++it)
-	            if (it.Get() != 0) labelSet.insert(it.Get());
+	        {
+	            const LabelPixelType v = it.Get();
+	            if (v == 0) continue;
+	            labelSet.insert(v);
+	            ++fixedCounts[v];
+	        }
 	    }
 	    {
 	        itk::ImageRegionConstIterator<LabelImageType> it(
 	            m_MovingLabelMap, m_MovingLabelMap->GetLargestPossibleRegion());
 	        for (; !it.IsAtEnd(); ++it)
-	            if (it.Get() != 0) labelSet.insert(it.Get());
+	        {
+	            const LabelPixelType v = it.Get();
+	            if (v == 0) continue;
+	            labelSet.insert(v);
+	            ++movingCounts[v];
+	        }
 	    }
-	    m_LabelValues.assign(labelSet.begin(), labelSet.end());
-
-	    if (m_LabelValues.empty()) return;
+	    if (labelSet.empty()) return;
 
 	    // Fixed-image geometry (for fixed distance maps)
 	    const auto & fxSize = this->m_FixedImage->GetLargestPossibleRegion().GetSize();
@@ -1306,10 +1324,23 @@ namespace itk
 	    const auto & mvDir  = this->m_MovingImage->GetDirection();
 
 	    std::cout << "[LabelMetric] Initializing distance maps for "
-	              << m_LabelValues.size() << " label(s)..." << std::endl;
+	              << labelSet.size() << " label(s)..." << std::endl;
 
-	    for (auto L : m_LabelValues)
+	    for (auto L : labelSet)
 	    {
+	        const unsigned long long nFixed =
+	            (fixedCounts.count(L) > 0) ? fixedCounts[L] : 0ull;
+	        const unsigned long long nMoving =
+	            (movingCounts.count(L) > 0) ? movingCounts[L] : 0ull;
+	        if (nFixed == 0ull || nMoving == 0ull)
+	        {
+	            std::cout << "[LabelMetric]   Label " << static_cast<int>(L)
+	                      << " skipped (missing in "
+	                      << ((nFixed == 0ull) ? "fixed" : "moving")
+	                      << " map)." << std::endl;
+	            continue;
+	        }
+
 	        // Fixed binary + distance map (in fixed image space)
 	        auto fixedBin  = this->BuildBinaryFromLabel(
 	            m_FixedLabelMap,  fxSize, fxSpc, fxOrg, fxDir, L);
@@ -1330,8 +1361,13 @@ namespace itk
 	        gi->SetInputImage(m_MovingDistGradMaps[L]);
 	        m_MovingDistGradInterps[L] = gi;
 
+	        m_LabelValues.push_back(L);
 	        std::cout << "[LabelMetric]   Label " << static_cast<int>(L) << " done." << std::endl;
 	    }
+
+	    if (m_LabelValues.empty())
+	        std::cout << "[LabelMetric]   No shared non-zero labels found; label metric disabled."
+	                  << std::endl;
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -1349,12 +1385,13 @@ namespace itk
 	    // Stride to hit approximately m_LabelNumberOfSamples sample points
 	    const unsigned long totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
+	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
 	    unsigned int stride = 1;
-	    if (m_LabelNumberOfSamples < totalPix)
+	    if (sampleTarget < totalPix)
 	    {
 	        stride = static_cast<unsigned int>(
 	            std::ceil(std::pow(static_cast<double>(totalPix) /
-	                               static_cast<double>(m_LabelNumberOfSamples),
+	                               static_cast<double>(sampleTarget),
 	                               1.0 / TFixedImage::ImageDimension)));
 	        if (stride < 1) stride = 1;
 	    }
@@ -1389,8 +1426,14 @@ namespace itk
 
 	            const double dFixed  = static_cast<double>(it.Get());
 	            const double dMoving = movingDistInterp->Evaluate(movingPt);
+	            if (!std::isfinite(dFixed) || !std::isfinite(dMoving)) continue;
+
 	            const double diff    = dFixed - dMoving;
-	            sumSqDiff += diff * diff;
+	            if (!std::isfinite(diff)) continue;
+	            const double sqDiff = diff * diff;
+	            if (!std::isfinite(sqDiff)) continue;
+
+	            sumSqDiff += sqDiff;
 	            ++n;
 
 	            // Also accumulate binary Dice stats (dFixed<0 → inside label)
@@ -1433,12 +1476,13 @@ namespace itk
 
 	    const unsigned long totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
+	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
 	    unsigned int stride = 1;
-	    if (m_LabelNumberOfSamples < totalPix)
+	    if (sampleTarget < totalPix)
 	    {
 	        stride = static_cast<unsigned int>(
 	            std::ceil(std::pow(static_cast<double>(totalPix) /
-	                               static_cast<double>(m_LabelNumberOfSamples),
+	                               static_cast<double>(sampleTarget),
 	                               1.0 / TFixedImage::ImageDimension)));
 	        if (stride < 1) stride = 1;
 	    }
@@ -1474,6 +1518,8 @@ namespace itk
 	            const double dFixed   = static_cast<double>(it.Get());
 	            const double dMoving  = movingDistInterp->Evaluate(movingPt);
 	            const double residual = dFixed - dMoving;
+	            if (!std::isfinite(dFixed) || !std::isfinite(dMoving) ||
+	                !std::isfinite(residual)) continue;
 
 	            // Gradient of moving distance map at the transformed point
 	            const auto gradVec = gradInterp->Evaluate(movingPt);
@@ -1488,7 +1534,9 @@ namespace itk
 	                double dot = 0.0;
 	                for (unsigned int d = 0; d < TFixedImage::ImageDimension; ++d)
 	                    dot += static_cast<double>(gradVec[d]) * jac(d, j);
-	                localDeriv[j] += -2.0 * residual * dot;
+	                const double contrib = -2.0 * residual * dot;
+	                if (std::isfinite(contrib))
+	                    localDeriv[j] += contrib;
 	            }
 	            ++n;
 	        }
@@ -1523,11 +1571,12 @@ namespace itk
 
 	    const unsigned long totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
+	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
 	    unsigned int stride = 1;
-	    if (m_LabelNumberOfSamples < totalPix) {
+	    if (sampleTarget < totalPix) {
 	        stride = static_cast<unsigned int>(
 	            std::ceil(std::pow(static_cast<double>(totalPix) /
-	                               static_cast<double>(m_LabelNumberOfSamples),
+	                               static_cast<double>(sampleTarget),
 	                               1.0 / TFixedImage::ImageDimension)));
 	        if (stride < 1) stride = 1;
 	    }
@@ -1566,9 +1615,13 @@ namespace itk
 	            const double dFixed  = static_cast<double>(it.Get());
 	            const double dMoving = movingDistInterp->Evaluate(movingPt);
 	            const double residual = dFixed - dMoving;
+	            if (!std::isfinite(dFixed) || !std::isfinite(dMoving) ||
+	                !std::isfinite(residual)) continue;
 
 	            // Value accumulation
-	            sumSqDiff += residual * residual;
+	            const double sqDiff = residual * residual;
+	            if (!std::isfinite(sqDiff)) continue;
+	            sumSqDiff += sqDiff;
 
 	            // Derivative accumulation
 	            if (kappaD != 0.0 && gradInterp->IsInsideBuffer(movingPt)) {
@@ -1579,7 +1632,9 @@ namespace itk
 	                    double dot = 0.0;
 	                    for (unsigned int d = 0; d < TFixedImage::ImageDimension; ++d)
 	                        dot += static_cast<double>(gradVec[d]) * jac(d, j);
-	                    localDeriv[j] += -2.0 * residual * dot;
+	                    const double contrib = -2.0 * residual * dot;
+	                    if (std::isfinite(contrib))
+	                        localDeriv[j] += contrib;
 	                }
 	            }
 
@@ -1607,7 +1662,8 @@ namespace itk
 	        m_LastDice[L] = dice;
 	    }
 
-	    value = static_cast<MeasureType>(m_LabelKappa * totalValue);
+	    // Return unweighted value; caller applies the global label weight.
+	    value = static_cast<MeasureType>(totalValue);
 	}
 
 } // end namespace itk

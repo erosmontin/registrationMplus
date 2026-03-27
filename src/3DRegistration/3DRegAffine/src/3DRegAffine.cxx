@@ -124,7 +124,7 @@ int main( int argc, char *argv[] )
 	("labelkappaderiv",po::value<double>()->default_value(0.0),       "Global kappa weight for label-map derivative")
 	("labelkappavec",  po::value<std::string>()->default_value(""),   "Per-label kappa (value) weights: 'L1:w1,L2:w2,...'")
 	("labelkappaderivvec", po::value<std::string>()->default_value(""),"Per-label kappa (derivative) weights: 'L1:w1,L2:w2,...'")
-	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric percentage of pixels used (0.1 = 10%)")
+	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric samples: fraction (0.1 = 10%) or absolute count (>1)")
 	("labelreport",    po::value<int>()->default_value(1),            "Report Dice every N iterations (0 = off)")
 	("snapshotdir",    po::value<std::string>()->default_value("N"), "Directory for iteration snapshots (N = off)")
 	("snapshotevery",  po::value<int>()->default_value(1),            "Save snapshot every N iterations")
@@ -434,6 +434,7 @@ if (method == "translation") {
     const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
     const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
     const unsigned int numberOfSamplesNC  = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+    const unsigned int numberOfSamplesLabel = RegCommon::ResolveLabelSampleCount(LABELSAMPLES, numberOfPixels);
 
 	metric->SetUseExplicitPDFDerivatives(EPDF);
 	metric->SetNumberOfThreads(NT);
@@ -487,7 +488,7 @@ if (method == "translation") {
 		metric->SetMovingLabelMap(movingLabelMap);
 		metric->SetLabelKappa(LABELKAPPA);
 		metric->SetLabelKappaDerivative(LABELKAPPADERIV);
-		metric->SetLabelNumberOfSamples(LABELSAMPLES);
+		metric->SetLabelNumberOfSamples(numberOfSamplesLabel);
 		if (!LABELKAPPAVEC.empty())      metric->SetLabelKappaWeights(LABELKAPPAVEC);
 		if (!LABELKAPPADERIVVEC.empty()) metric->SetLabelKappaDerivativeWeights(LABELKAPPADERIVVEC);
 	}

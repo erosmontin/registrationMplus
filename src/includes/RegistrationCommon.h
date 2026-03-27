@@ -39,6 +39,30 @@ inline std::map<short, double> ParseLabelWeights(const std::string & s)
     return result;
 }
 
+// ── Convert label sample input to an absolute sample count ───────────────────
+// Accepts either:
+//   - fraction in (0, 1]  -> interpreted as percentage of image voxels
+//   - absolute count > 1  -> interpreted as direct number of samples
+inline unsigned int ResolveLabelSampleCount(double rawLabelSamples,
+                                            unsigned int numberOfPixels)
+{
+    const unsigned int safePixelCount = std::max(1u, numberOfPixels);
+    const unsigned int defaultCount =
+        std::max(1u, static_cast<unsigned int>(std::ceil(0.1 * safePixelCount)));
+
+    if (!std::isfinite(rawLabelSamples) || rawLabelSamples <= 0.0)
+        return defaultCount;
+
+    if (rawLabelSamples <= 1.0)
+    {
+        const double asCount = std::ceil(rawLabelSamples * safePixelCount);
+        return std::max(1u, static_cast<unsigned int>(asCount));
+    }
+
+    const double capped = std::min(rawLabelSamples, static_cast<double>(safePixelCount));
+    return std::max(1u, static_cast<unsigned int>(std::ceil(capped)));
+}
+
 // ── Print all boost::program_options ────────────────────────────────────────
 inline void PrintOptions(const po::variables_map & vm)
 {
@@ -199,7 +223,10 @@ inline void WireLabelMaps(MetricPointer & metric, const po::variables_map & vm)
     metric->SetMovingLabelMap(movTmp);
     metric->SetLabelKappa(vm["labelkappa"].template as<double>());
     metric->SetLabelKappaDerivative(vm["labelkappaderiv"].template as<double>());
-    metric->SetLabelNumberOfSamples(vm["labelsamples"].template as<double>());
+    const unsigned int numberOfPixels =
+        static_cast<unsigned int>(fixTmp->GetLargestPossibleRegion().GetNumberOfPixels());
+    metric->SetLabelNumberOfSamples(
+        ResolveLabelSampleCount(vm["labelsamples"].template as<double>(), numberOfPixels));
 
     const auto kappaVec      = ParseLabelWeights(vm["labelkappavec"].template as<std::string>());
     const auto kappaDerivVec = ParseLabelWeights(vm["labelkappaderivvec"].template as<std::string>());

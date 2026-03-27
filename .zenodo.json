@@ -1,0 +1,32 @@
+{
+  "title": "registrationMplus",
+  "description": "registrationMplus is a multi-metric medical image registration framework for longitudinal and multimodal MRI, with applications in pediatric oncology.",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Montin, Eros",
+      "orcid": "0000-0002-1773-0064"
+    }
+  ],
+  "keywords": [
+    "medical image registration",
+    "deformable registration",
+    "MRI",
+    "pediatric oncology",
+    "ITK"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.1007/s11517-019-02109-4",
+      "relation": "isSupplementTo",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "10.1371/journal.pone.0247748",
+      "relation": "isReferencedBy",
+      "scheme": "doi",
+      "resource_type": "publication-article"
+    }
+  ]
+}
