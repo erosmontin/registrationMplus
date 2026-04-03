@@ -120,6 +120,7 @@ int main(int argc, char *argv[])
     ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NC, 0 = no derivatives")
 	("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
 	("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+	("normalizemse",  po::value<bool>()->default_value(false), "Normalize MSE by intensity-range^2 to keep it comparable to MI/NGF/NC (default false)")
 	("gdpercentage",   po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
 	("nmipercentage",  po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
 	("ncpercentage", po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
@@ -501,6 +502,7 @@ int main(int argc, char *argv[])
 	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
+	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
 	metric->SetNu(NU);
 	metric->SetNuDerivative(NUDERIVATIVE);
 

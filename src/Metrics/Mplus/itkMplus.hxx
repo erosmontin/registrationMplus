@@ -976,6 +976,12 @@ namespace itk
 	Mplus<TFixedImage, TMovingImage>::GetMSEDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 		m_MSE->GetDerivative(parameters, derivative);
+		if (this->m_NormalizeMSE)
+		{
+			const double inv = 1.0 / this->m_MSEIntensityRangeSquared;
+			for (unsigned int i = 0; i < derivative.size(); ++i)
+				derivative[i] *= inv;
+		}
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -1016,6 +1022,14 @@ namespace itk
 			rawValC = m_MSE->GetValue(parameters);
 		else if (this->m_NuDerivative != 0.0)
 			m_MSE->GetDerivative(parameters, rawDerC);
+		// Apply MSE normalisation: divide both value and derivative by range^2
+		if (this->m_NormalizeMSE)
+		{
+			const double inv = 1.0 / this->m_MSEIntensityRangeSquared;
+			rawValC *= inv;
+			for (unsigned int i = 0; i < nParams; ++i)
+				rawDerC[i] *= inv;
+		}
 
 		// GD (Gradient Difference)
 		if (this->m_Rho != 0.0 && this->m_RhoDerivative != 0.0)

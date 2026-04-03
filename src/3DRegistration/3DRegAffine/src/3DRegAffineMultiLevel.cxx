@@ -108,6 +108,7 @@ int main( int argc, char *argv[] )
 		("mainmetric", po::value<int>()->default_value(0), "Main metric index for mode 2: 0=MI, 1=NGF, 2=MSE, 3=NC, 4=Label, 5=GD, 6=NMI")
         ("numberoflevels,U", po::value<int>(&NL)->default_value(2), "Number of levels")
 		("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+		("normalizemse",    po::value<bool>()->default_value(false), "Normalize MSE by intensity-range^2 to keep it comparable to MI/NGF/NC (default false)")
 		("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
 		("gdpercentage",    po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
 		("nmipercentage",   po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
@@ -448,6 +449,7 @@ if (method == "translation") {
 	metric->SetAlpha(ALPHA);
 	metric->SetAlphaDerivative(ALPHADERIVATIVE);
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
+	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetUseExplicitPDFDerivatives(EPDF);
