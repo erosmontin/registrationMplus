@@ -748,6 +748,67 @@ private:
         return out;
     }
 
+    /** Rescale a slice using a shared [inMin, inMax] intensity range.
+     *  This ensures consistent contrast across fixed/moving/checkerboard images. */
+    typename UCharSliceType::Pointer
+    ToUCharWithRange(const SliceType* slice, PixelType inMin, PixelType inMax) const
+    {
+        using R = itk::RescaleIntensityImageFilter<SliceType, UCharSliceType>;
+        auto r = R::New();
+        r->SetInput(slice);
+        // Manually map [inMin, inMax] → [0, 255]
+        r->SetInputMinimum(inMin);
+        r->SetInputMaximum(inMax);
+        r->SetOutputMinimum(0);
+        r->SetOutputMaximum(255);
+        r->Update();
+        typename UCharSliceType::Pointer out = r->GetOutput();
+        out->DisconnectPipeline();
+        return out;
+    }
+
+    /** Compute the global min/max intensity range across two slices.
+     *  Returns pair<min, max> suitable for passing to ToUCharWithRange(). */
+    std::pair<PixelType, PixelType>
+    ComputeSharedIntensityRange(const SliceType* slice1, const SliceType* slice2) const
+    {
+        PixelType binMin1 =  std::numeric_limits<PixelType>::max();
+        PixelType binMax1 = -std::numeric_limits<PixelType>::max();
+        PixelType binMin2 =  std::numeric_limits<PixelType>::max();
+        PixelType binMax2 = -std::numeric_limits<PixelType>::max();
+
+        if (slice1)
+        {
+            itk::ImageRegionConstIterator<SliceType> it1(slice1, slice1->GetLargestPossibleRegion());
+            for (it1.GoToBegin(); !it1.IsAtEnd(); ++it1)
+            {
+                PixelType v = it1.Get();
+                if (v < binMin1) binMin1 = v;
+                if (v > binMax1) binMax1 = v;
+            }
+        }
+
+        if (slice2)
+        {
+            itk::ImageRegionConstIterator<SliceType> it2(slice2, slice2->GetLargestPossibleRegion());
+            for (it2.GoToBegin(); !it2.IsAtEnd(); ++it2)
+            {
+                PixelType v = it2.Get();
+                if (v < binMin2) binMin2 = v;
+                if (v > binMax2) binMax2 = v;
+            }
+        }
+
+        PixelType globalMin = std::min(binMin1, binMin2);
+        PixelType globalMax = std::max(binMax1, binMax2);
+
+        // Avoid division by zero: if min == max, expand slightly
+        if (globalMin >= globalMax)
+            globalMax = globalMin + 1;
+
+        return {globalMin, globalMax};
+    }
+
     /** Convert a grayscale UChar slice to an RGB slice (all channels equal). */
     typename RGBSliceType::Pointer
     GrayToRGB(const UCharSliceType* gray) const
@@ -1262,10 +1323,14 @@ public:
                 typename SliceType::Pointer chkSlice = cb->GetOutput();
                 chkSlice->DisconnectPipeline();
 
-                // Convert to unsigned-char [0,255]
-                auto fUC  = ToUChar(fixSlice.GetPointer());
-                auto mUC  = ToUChar(movSlice.GetPointer());
-                auto cUC  = ToUChar(chkSlice.GetPointer());
+                // Compute shared intensity range for fixed + moving images
+                // This ensures consistent contrast across all panels
+                auto [globalMin, globalMax] = ComputeSharedIntensityRange(fixSlice, movSlice);
+
+                // Convert to unsigned-char [0,255] using shared range
+                auto fUC  = ToUCharWithRange(fixSlice.GetPointer(), globalMin, globalMax);
+                auto mUC  = ToUCharWithRange(movSlice.GetPointer(), globalMin, globalMax);
+                auto cUC  = ToUCharWithRange(chkSlice.GetPointer(), globalMin, globalMax);
 
                 // Convert all 3 grayscale panels to RGB
                 auto fRGB = GrayToRGB(fUC.GetPointer());
