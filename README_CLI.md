@@ -61,7 +61,7 @@
 Single comma-separated array specifies all metric weights:
 
 ```
---metrics "alpha,lambda,nu,rho,yota,kappa,sigma"
+--metrics "alpha,lambda,nu,rho,yota,sigma"
 ```
 
 **Layout:**
@@ -70,22 +70,23 @@ Single comma-separated array specifies all metric weights:
 - **nu** (0–1.5): Mean Squared Error (MSE) weight (intensity)
 - **rho** (0–1.5): Gradient Difference (GD) weight
 - **yota** (0–1.5): Normalized Correlation (NC) weight
-- **kappa** (0–1.5): Label map penalty weight
 - **sigma** (0–1.5): Normalized Mutual Information (NMI) weight
+
+> **Note:** Label penalty weight (`kappa`) is separate — use `--labelkappa` or `--label-weights` instead.
 
 **Examples:**
 ```bash
 # MI + NGF (multimodal)
---metrics "1.0,0.5,0,0,0,0,0"
+--metrics "1.0,0.5,0,0,0,0"
 
 # MSE + NC (single-modal)
---metrics "0,0,1.0,0,0.5,0,0"
+--metrics "0,0,1.0,0,0.5,0"
 
 # All four main metrics
---metrics "1.0,0.5,0.2,0.1,0,0,0"
+--metrics "1.0,0.5,0.2,0.1,0,0"
 
 # Disable all (custom config)
---metrics "0,0,0,0,0,0,0"
+--metrics "0,0,0,0,0,0"
 ```
 
 ### **Derivatives: `--metric-derivatives`**
@@ -93,7 +94,7 @@ Single comma-separated array specifies all metric weights:
 Optionally specify separate derivatives (default: auto-derived from weights):
 
 ```bash
---metric-derivatives "1.0,0.5,0,0,0,0,0"
+--metric-derivatives "1.0,0.5,0,0,0,0"
 ```
 
 If not provided, derivatives = weights (or 0 if weight is 0).
@@ -103,16 +104,18 @@ If not provided, derivatives = weights (or 0 if weight is 0).
 Override sampling percentages per-metric (default: all 0.1 = 10%):
 
 ```bash
---metric-sampling "0.15,0.1,0.1,0.1,0.1,0.1,0.1"
+--metric-sampling "0.15,0.1,0.1,0.1,0.1,0.1"
 ```
 
-Layout: `ma%,ngf%,mse%,gd%,nc%,nmi%,label%`
+Layout: `ma%,ngf%,mse%,gd%,nc%,nmi%`
+
+> **Note:** Label metric sampling is separate — use `--labelsamples`.
 
 **Example:** Use more samples for MI, less for MSE:
 ```bash
 ./3DRegAffine --fixed A.nii --moving B.nii --output T.txt \
   --preset multimodal \
-  --metric-sampling "0.2,0.15,0.05,0.1,0.1,0.1,0.1"
+  --metric-sampling "0.2,0.15,0.05,0.1,0.1,0.1"
 ```
 
 ---
@@ -170,9 +173,9 @@ For a brain with 3 structures:
 ### **Metrics (NEW - Simplified)**
 ```bash
 --preset {multimodal|singlemodal|rigid}  Auto-configure weights
---metrics "a,b,c,d,e,f,g"                Explicit weight array
---metric-derivatives "a,b,c,d,e,f,g"     Optional explicit derivatives
---metric-sampling "a,b,c,d,e,f,g"        Optional per-metric sampling %
+--metrics "a,b,c,d,e,f"                  Explicit weight array (alpha,lambda,nu,rho,yota,sigma)
+--metric-derivatives "a,b,c,d,e,f"       Optional explicit derivatives
+--metric-sampling "a,b,c,d,e,f"          Optional per-metric sampling %
 ```
 
 ### **Metrics (Traditional - Still Works)**

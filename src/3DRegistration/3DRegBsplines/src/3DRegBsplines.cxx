@@ -212,33 +212,35 @@ int main(int argc, char *argv[])
 	    );
 	}
 
-	// Warn on conflicts and merge individual parameter overrides
+	// Warn on conflicts and merge individual parameter overrides.
+	// Use !vm[x].defaulted() to detect parameters explicitly passed on the CLI
+	// (vm.count() is always 1 for params with default_value, which is wrong).
 	MetricsConfig::DetectConflicts(
 	    hasMetricsArray,
-	    (vm.count("alpha") && vm["alpha"].as<double>() != 1.0) ? vm["alpha"].as<double>() : -1,
-	    (vm.count("lambda") && vm["lambda"].as<double>() != 1.0) ? vm["lambda"].as<double>() : -1,
-	    (vm.count("nu") && vm["nu"].as<double>() != 1.0) ? vm["nu"].as<double>() : -1,
-	    vm.count("rho") ? vm["rho"].as<double>() : -1,
-	    vm.count("yota") ? vm["yota"].as<double>() : -1,
-	    vm.count("sigma") ? vm["sigma"].as<double>() : -1,
+	    !vm["alpha"].defaulted()  ? vm["alpha"].as<double>()  : -1,
+	    !vm["lambda"].defaulted() ? vm["lambda"].as<double>() : -1,
+	    !vm["nu"].defaulted()     ? vm["nu"].as<double>()     : -1,
+	    !vm["rho"].defaulted()    ? vm["rho"].as<double>()    : -1,
+	    !vm["yota"].defaulted()   ? vm["yota"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()  ? vm["sigma"].as<double>()  : -1,
 	    true  // verbose
 	);
 
-	// Apply individual overrides
+	// Apply individual overrides (only when explicitly passed on CLI)
 	metricsConfig = MetricsConfig::MergeIndividual(
 	    metricsConfig,
-	    (vm.count("alpha") && vm["alpha"].as<double>() >= 0) ? vm["alpha"].as<double>() : -1,
-	    (vm.count("alphaderivative") && vm["alphaderivative"].as<double>() >= 0) ? vm["alphaderivative"].as<double>() : -1,
-	    (vm.count("lambda") && vm["lambda"].as<double>() >= 0) ? vm["lambda"].as<double>() : -1,
-	    (vm.count("lambdaderivative") && vm["lambdaderivative"].as<double>() >= 0) ? vm["lambdaderivative"].as<double>() : -1,
-	    (vm.count("nu") && vm["nu"].as<double>() >= 0) ? vm["nu"].as<double>() : -1,
-	    (vm.count("nuderivative") && vm["nuderivative"].as<double>() >= 0) ? vm["nuderivative"].as<double>() : -1,
-	    (vm.count("rho") && vm["rho"].as<double>() >= 0) ? vm["rho"].as<double>() : -1,
-	    (vm.count("rhoderivative") && vm["rhoderivative"].as<double>() >= 0) ? vm["rhoderivative"].as<double>() : -1,
-	    (vm.count("yota") && vm["yota"].as<double>() >= 0) ? vm["yota"].as<double>() : -1,
-	    (vm.count("yotaderivative") && vm["yotaderivative"].as<double>() >= 0) ? vm["yotaderivative"].as<double>() : -1,
-	    (vm.count("sigma") && vm["sigma"].as<double>() >= 0) ? vm["sigma"].as<double>() : -1,
-	    (vm.count("sigmaderivative") && vm["sigmaderivative"].as<double>() >= 0) ? vm["sigmaderivative"].as<double>() : -1
+	    !vm["alpha"].defaulted()           ? vm["alpha"].as<double>()           : -1,
+	    !vm["alphaderivative"].defaulted()  ? vm["alphaderivative"].as<double>()  : -1,
+	    !vm["lambda"].defaulted()           ? vm["lambda"].as<double>()           : -1,
+	    !vm["lambdaderivative"].defaulted() ? vm["lambdaderivative"].as<double>() : -1,
+	    !vm["nu"].defaulted()               ? vm["nu"].as<double>()               : -1,
+	    !vm["nuderivative"].defaulted()     ? vm["nuderivative"].as<double>()     : -1,
+	    !vm["rho"].defaulted()              ? vm["rho"].as<double>()              : -1,
+	    !vm["rhoderivative"].defaulted()    ? vm["rhoderivative"].as<double>()    : -1,
+	    !vm["yota"].defaulted()             ? vm["yota"].as<double>()             : -1,
+	    !vm["yotaderivative"].defaulted()   ? vm["yotaderivative"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()            ? vm["sigma"].as<double>()            : -1,
+	    !vm["sigmaderivative"].defaulted()  ? vm["sigmaderivative"].as<double>()  : -1
 	);
 
 	// Apply metric-specific sampling overrides
@@ -534,57 +536,84 @@ int main(int argc, char *argv[])
 		const_cast<ImageType*>(fixedImage.GetPointer())->SetRequestedRegion(meshregionresampled);
 	}
 
+	// ---------------------------------------------------------------
+	// B-spline domain setup: centre the grid on the image anatomy.
+	//
+	// The domain is defined by Origin, PhysicalDimensions and Direction.
+	// ITK interprets PhysicalDimensions[i] as the extent along the i-th
+	// column of the Direction matrix.  To guarantee centring for ANY
+	// direction matrix (including oblique acquisitions), we:
+	//   1) compute PhysicalDimensions = imageExtent + 2*padding
+	//   2) compute the image centre in world coordinates (full matrix)
+	//   3) derive Origin so the domain centre == image centre
+	// ---------------------------------------------------------------
+
+	const unsigned int borderNodesPerSide =
+		vm["overlappadding"].as<unsigned int>();
+	const double extension = borderNodesPerSide * GRIDRESOLUTION;
+
+	// 1) Physical dimensions & mesh size per parametric axis
 	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
-			// Number of extra B-spline control points outside the image domain
-			// per side.  ITK internally handles the SplineOrder border
-			// coefficients; this setting only controls how far the domain
-			// extends beyond the anatomy for better edge deformation.
-			const unsigned int borderNodesPerSide =
-				vm["overlappadding"].as<unsigned int>();
-			const double extension = borderNodesPerSide * GRIDRESOLUTION;
+		fixedPhysicalDimensions[i] =
+			meshspacing[i] * (meshsize[i] - 1)
+			+ 2.0 * meshMargin
+			+ 2.0 * extension;
 
-			// The domain extends from origin along the direction matrix.
-			// When direction[i][i] < 0 the physical extent goes negative,
-			// so the origin must be shifted *positive* to place border
-			// nodes symmetrically around the anatomy (and vice versa).
-			const double dirSign = meshdirection[i][i] >= 0 ? 1.0 : -1.0;
+		const unsigned int totalGridNodes =
+			static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
 
-			// 1) shift the origin "before" the anatomy in its natural direction
-			fixedOrigin[i] = meshorigin[i] - dirSign * (meshMargin + extension);
+		meshSize[i] = totalGridNodes > SplineOrder
+					? totalGridNodes - SplineOrder
+					: 1;
+	}
 
-			// 2) grow the physical size by 2*extension
-			fixedPhysicalDimensions[i] =
-				meshspacing[i] * (meshsize[i] - 1)
-				+ 2.0 * meshMargin
-				+ 2.0 * extension;
+	// 2) Image centre in world coordinates (uses full direction matrix)
+	//    imageCenter = meshorigin + Direction * (spacing .* (size-1)) / 2
+	TransformType::OriginType imageCenter;
+	for (unsigned int j = 0; j < SpaceDimension; ++j)
+	{
+		imageCenter[j] = meshorigin[j];
+		for (unsigned int i = 0; i < SpaceDimension; ++i)
+		{
+			imageCenter[j] += meshdirection[j][i]
+				* meshspacing[i] * (meshsize[i] - 1) * 0.5;
+		}
+	}
 
-			// 3) now recompute how many grid‐nodes you need
-			const unsigned int totalGridNodes =
-				static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
+	// 3) Origin = imageCenter - Direction * PhysicalDimensions / 2
+	for (unsigned int j = 0; j < SpaceDimension; ++j)
+	{
+		fixedOrigin[j] = imageCenter[j];
+		for (unsigned int i = 0; i < SpaceDimension; ++i)
+		{
+			fixedOrigin[j] -= meshdirection[j][i]
+				* fixedPhysicalDimensions[i] * 0.5;
+		}
+	}
 
-			// 4) subtract the spline order to get the final meshSize
-			meshSize[i] = totalGridNodes > SplineOrder
-						? totalGridNodes - SplineOrder
-						: 1;  // guard against too small
-
-			if (vm["verbose"].as<bool>())
-			{
-				std::cout
+	if (vm["verbose"].as<bool>())
+	{
+		for (unsigned int i = 0; i < SpaceDimension; ++i)
+		{
+			std::cout
 				<< "Dim " << i
-				<< " dirSign = " << dirSign
 				<< ", origin = " << fixedOrigin[i]
 				<< ", physSize = " << fixedPhysicalDimensions[i]
 				<< ", meshSize = " << meshSize[i]
 				<< std::endl;
-			}
+		}
+		std::cout << "Image centre: ("
+			<< imageCenter[0] << ", "
+			<< imageCenter[1] << ", "
+			<< imageCenter[2] << ")" << std::endl;
 	}
 
 	transform->SetTransformDomainOrigin(fixedOrigin);
 	transform->SetTransformDomainPhysicalDimensions(
 		fixedPhysicalDimensions);
 	transform->SetTransformDomainMeshSize(meshSize);
-	transform->SetTransformDomainDirection(fixedImage->GetDirection());
+	transform->SetTransformDomainDirection(meshdirection);
 	transform->SetIdentity();
 
 	const unsigned int numberOfGridNodes = transform->GetNumberOfParameters() / SpaceDimension;

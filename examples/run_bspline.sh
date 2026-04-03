@@ -63,8 +63,8 @@ while IFS= read -r G; do
       --metric-derivatives "1.0,0,0,0,0,0" \
       --metric-sampling  "0.05,0.05,0.05,0,0,0" \
       \
-      --gridresolution 50 \
-      --overlappadding 5 \
+      --gridresolution 20 \
+      --overlappadding 3 \
       -I 1000 \
       -F 1e7 \
       --normalizemse 1 \

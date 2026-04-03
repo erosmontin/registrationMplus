@@ -25,9 +25,9 @@
 ("preset", po::value<std::string>()->default_value(""), 
  "Metric preset: 'multimodal' (alpha=1,lambda=0.5), 'singlemodal' (nu=1,yota=0.5), 'rigid', or 'custom' (no defaults)")
 ("weights", po::value<std::string>()->default_value(""), 
- "Metric weights as comma-separated array: alpha,lambda,nu,rho,yota,kappa,sigma (e.g., '1.0,0.5,0,0,0,0,0')")
+ "Metric weights as comma-separated array: alpha,lambda,nu,rho,yota,sigma (e.g., '1.0,0.5,0,0,0,0')")
 ("metric-percentages", po::value<std::string>()->default_value(""), 
- "Sampling percentages as comma-separated array: ma,ngf,mse,gd,nc,nmi,label (default: all 0.1)")
+ "Sampling percentages as comma-separated array: ma,ngf,mse,gd,nc,nmi (default: all 0.1; label → --labelsamples)")
 
 // === OLD FORMAT: Kept for backward compatibility ===
 // (Keep all existing --alpha, --lambda, --nu, etc. options)
@@ -68,7 +68,7 @@ bool isNewFormat = CliParser::IsNewFormat(weightsStr, presetStr);
 
 CliParser::MetricWeights weights;
 CliParser::MetricDerivatives derivatives;
-CliParser::SamplingPercentages sampling = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
+CliParser::SamplingPercentages sampling = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
 
 if (isNewFormat)
 {

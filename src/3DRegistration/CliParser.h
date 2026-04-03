@@ -11,9 +11,15 @@
  * @class CliParser
  * @brief Unified CLI parser supporting both old (verbose) and new (array-based) formats.
  *
+ * @deprecated This class is NOT used by any executable (3DRegBsplines, 3DRegAffine, etc.).
+ *             All executables use MetricsConfig::ParseMainWeights() which expects exactly
+ *             6 values: alpha,lambda,nu,rho,yota,sigma  (kappa is separate via --labelkappa).
+ *             CliParser's 7-value format (with kappa inline) is an old proposal.
+ *             Retained for reference only.
+ *
  * Supports automatic format detection:
  *   Old: --alpha 1.0 --lambda 0.5 --nu 0.8
- *   New: --weights "1.0,0.5,0.8,0,0,0,0"  or --preset multimodal
+ *   New: --weights "1.0,0.5,0.8,0,0,0"  or --preset multimodal
  *
  * Derivatives default to weight values if not specified separately.
  * Sampling percentages default to 10% for all metrics if not specified.

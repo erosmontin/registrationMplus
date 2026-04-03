@@ -414,9 +414,9 @@ if (SNAPSHOTDIR != "N") {
 ```cpp
 // Lines: 191-206 (NEW - SIMPLIFIED INTERFACE)
 --preset                Default: ""   → Preset: 'multimodal', 'singlemodal', 'rigid'
---metrics               Default: ""   → Metric array: alpha,lambda,nu,rho,yota,sigma,kappa
---metric-derivatives    Default: ""   → Derivative array
---metric-sampling       Default: ""   → Sampling array: ma%,ngf%,mse%,gd%,nc%,nmi%,label%
+--metrics               Default: ""   → Metric array: alpha,lambda,nu,rho,yota,sigma
+--metric-derivatives    Default: ""   → Derivative array: alpha_d,lambda_d,nu_d,rho_d,yota_d,sigma_d
+--metric-sampling       Default: ""   → Sampling array: ma%,ngf%,mse%,gd%,nc%,nmi% (label → --labelsamples)
 --label-weights         Default: ""   → Per-label weights (alternative to --labelkappa)
 --label-derivatives     Default: ""   → Per-label derivatives
 --modality              Default: "custom" → 'multimodal', 'singlemodal', or 'custom'

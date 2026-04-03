@@ -297,7 +297,7 @@ A: [README_CLI_FIXES.md](./README_CLI_FIXES.md)
 
 ---
 
-**Version:** 1.2.1  
+**Version:** 1.2.2  
 **Date:** April 2026  
 **Last Updated:** After all fixes applied  
 **Status:** ✅ Complete & Verified

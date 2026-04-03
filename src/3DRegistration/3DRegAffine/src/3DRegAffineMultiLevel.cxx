@@ -199,33 +199,35 @@ int main( int argc, char *argv[] )
 	    );
 	}
 
-	// Warn on conflicts and merge individual parameter overrides
+	// Warn on conflicts and merge individual parameter overrides.
+	// Use !vm[x].defaulted() to detect parameters explicitly passed on the CLI
+	// (vm.count() is always 1 for params with default_value, which is wrong).
 	MetricsConfig::DetectConflicts(
 	    hasMetricsArray,
-	    (vm.count("alpha") && vm["alpha"].as<double>() != 1.0) ? vm["alpha"].as<double>() : -1,
-	    (vm.count("lambda") && vm["lambda"].as<double>() != 1.0) ? vm["lambda"].as<double>() : -1,
-	    (vm.count("nu") && vm["nu"].as<double>() != 1.0) ? vm["nu"].as<double>() : -1,
-	    vm.count("rho") ? vm["rho"].as<double>() : -1,
-	    vm.count("yota") ? vm["yota"].as<double>() : -1,
-	    vm.count("sigma") ? vm["sigma"].as<double>() : -1,
+	    !vm["alpha"].defaulted()  ? vm["alpha"].as<double>()  : -1,
+	    !vm["lambda"].defaulted() ? vm["lambda"].as<double>() : -1,
+	    !vm["nu"].defaulted()     ? vm["nu"].as<double>()     : -1,
+	    !vm["rho"].defaulted()    ? vm["rho"].as<double>()    : -1,
+	    !vm["yota"].defaulted()   ? vm["yota"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()  ? vm["sigma"].as<double>()  : -1,
 	    true  // verbose
 	);
 
-	// Apply individual overrides
+	// Apply individual overrides (only when explicitly passed on CLI)
 	metricsConfig = MetricsConfig::MergeIndividual(
 	    metricsConfig,
-	    (vm.count("alpha") && vm["alpha"].as<double>() >= 0) ? vm["alpha"].as<double>() : -1,
-	    (vm.count("alphaderivative") && vm["alphaderivative"].as<double>() >= 0) ? vm["alphaderivative"].as<double>() : -1,
-	    (vm.count("lambda") && vm["lambda"].as<double>() >= 0) ? vm["lambda"].as<double>() : -1,
-	    (vm.count("lambdaderivative") && vm["lambdaderivative"].as<double>() >= 0) ? vm["lambdaderivative"].as<double>() : -1,
-	    (vm.count("nu") && vm["nu"].as<double>() >= 0) ? vm["nu"].as<double>() : -1,
-	    (vm.count("nuderivative") && vm["nuderivative"].as<double>() >= 0) ? vm["nuderivative"].as<double>() : -1,
-	    (vm.count("rho") && vm["rho"].as<double>() >= 0) ? vm["rho"].as<double>() : -1,
-	    (vm.count("rhoderivative") && vm["rhoderivative"].as<double>() >= 0) ? vm["rhoderivative"].as<double>() : -1,
-	    (vm.count("yota") && vm["yota"].as<double>() >= 0) ? vm["yota"].as<double>() : -1,
-	    (vm.count("yotaderivative") && vm["yotaderivative"].as<double>() >= 0) ? vm["yotaderivative"].as<double>() : -1,
-	    (vm.count("sigma") && vm["sigma"].as<double>() >= 0) ? vm["sigma"].as<double>() : -1,
-	    (vm.count("sigmaderivative") && vm["sigmaderivative"].as<double>() >= 0) ? vm["sigmaderivative"].as<double>() : -1
+	    !vm["alpha"].defaulted()           ? vm["alpha"].as<double>()           : -1,
+	    !vm["alphaderivative"].defaulted()  ? vm["alphaderivative"].as<double>()  : -1,
+	    !vm["lambda"].defaulted()           ? vm["lambda"].as<double>()           : -1,
+	    !vm["lambdaderivative"].defaulted() ? vm["lambdaderivative"].as<double>() : -1,
+	    !vm["nu"].defaulted()               ? vm["nu"].as<double>()               : -1,
+	    !vm["nuderivative"].defaulted()     ? vm["nuderivative"].as<double>()     : -1,
+	    !vm["rho"].defaulted()              ? vm["rho"].as<double>()              : -1,
+	    !vm["rhoderivative"].defaulted()    ? vm["rhoderivative"].as<double>()    : -1,
+	    !vm["yota"].defaulted()             ? vm["yota"].as<double>()             : -1,
+	    !vm["yotaderivative"].defaulted()   ? vm["yotaderivative"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()            ? vm["sigma"].as<double>()            : -1,
+	    !vm["sigmaderivative"].defaulted()  ? vm["sigmaderivative"].as<double>()  : -1
 	);
 
 	// Apply metric-specific sampling overrides
