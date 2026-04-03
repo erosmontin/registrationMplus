@@ -1495,8 +1495,9 @@ namespace itk
 
 	        if (n == 0) continue;
 
-	        // Scale by kappaL / N and add to output derivative
-	        const double scale = kappaL / static_cast<double>(n);
+	        // Scale by m_LabelKappa * kappaL / N — must include m_LabelKappa to
+	        // match GetKappaValue which returns m_LabelKappa * totalValue.
+	        const double scale = m_LabelKappa * kappaL / static_cast<double>(n);
 	        #pragma omp parallel for
 	        for (unsigned int j = 0; j < nParams; ++j)
 	            derivative[j] += scale * localDeriv[j];
@@ -1596,16 +1597,17 @@ namespace itk
 
 	        totalValue += kappaV * sumSqDiff / static_cast<double>(n);
 
-	        const double scaleD = kappaD / static_cast<double>(n);
-	        #pragma omp parallel for
-	        for (unsigned int j = 0; j < nParams; ++j)
-	            derivative[j] += scaleD * localDeriv[j];
+        // Include m_LabelKappa to keep value/derivative consistent.
+        const double scaleD = m_LabelKappa * kappaD / static_cast<double>(n);
+        #pragma omp parallel for
+        for (unsigned int j = 0; j < nParams; ++j)
+            derivative[j] += scaleD * localDeriv[j];
 
-	        double dice = 0.0;
-	        if (countF + countM > 0)
-	            dice = 2.0 * countIntersect / static_cast<double>(countF + countM);
-	        m_LastDice[L] = dice;
-	    }
+        double dice = 0.0;
+        if (countF + countM > 0)
+            dice = 2.0 * countIntersect / static_cast<double>(countF + countM);
+        m_LastDice[L] = dice;
+    }
 
 	    value = static_cast<MeasureType>(m_LabelKappa * totalValue);
 	}

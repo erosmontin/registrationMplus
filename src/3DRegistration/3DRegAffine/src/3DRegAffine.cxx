@@ -61,13 +61,13 @@ const unsigned int ImageDimension = 3;
 typedef itk::RegularStepGradientDescentOptimizer OptimizerType;
 int main( int argc, char *argv[] )
 {
-    po::options_description desc("B-spline Registration\n"
+    po::options_description desc("Affine Registration\n"
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
 	"Allowed options for alpha MI + lambda NGF +  nu MSE +yota NMI\n\n");
     std::string method;
-	double YOTA=0.1;
+	double YOTA=0;
 	double YOTADERIVATIVE=0;
 	desc.add_options()
 	    ("help,h", "produce help message")
@@ -234,7 +234,8 @@ int main( int argc, char *argv[] )
     double SIGMADERIVATIVE = vm["sigmaderivative"].as<double>();
     int    NMIBINS         = vm["nmibins"].as<int>();
 
-    // parse ngfspacing → SpacingType
+    // parse ngfspacing -> SpacingType
+    MovingImageType::SpacingType ngfSpacing;
     {
         auto s = vm["ngfspacing"].as<std::string>();
         std::replace(s.begin(), s.end(), ',', ' ');
@@ -245,13 +246,10 @@ int main( int argc, char *argv[] )
         if(v.size() != ImageDimension)
         {
             std::cerr << "Error: ngfspacing must have "
-                      << ImageDimension << " comma‐separated values\n";
+                      << ImageDimension << " comma-separated values\n";
             return EXIT_FAILURE;
         }
-        MovingImageType::SpacingType ngf;
-        for(unsigned i=0; i<ImageDimension; ++i) ngf[i] = v[i];
-        vm.insert({ "parsed_ngfspacing",
-            po::variable_value(boost::any(ngf),false) });
+        for(unsigned i=0; i<ImageDimension; ++i) ngfSpacing[i] = v[i];
     }
 
 	auto optimizer = OptimizerType::New();
@@ -343,15 +341,14 @@ if (method == "translation") {
         optimizerScales[i] = kFreezeScale;
     }
 } else if (method == "rotation") {
-    // Only optimize rotation parameters
-		optimizerScales.Fill(1.0);
-    for (int i = 3; i < 12; ++i) {
-        if (i < 9) {
-            optimizerScales[i] = 1.0;
-        } else {
-            optimizerScales[i] = kFreezeScale;
-        }
-    }
+    // Freeze translation; allow all matrix elements.
+    // NOTE: AffineTransform does not constrain the matrix to SO(3) — the optimizer
+    // may still introduce shear/scale alongside rotation. For a true rotation-only
+    // transform, consider using 3DRegSimilarity (Similarity3DTransform).
+    optimizerScales.Fill(1.0);
+    optimizerScales[9]  = kFreezeScale;
+    optimizerScales[10] = kFreezeScale;
+    optimizerScales[11] = kFreezeScale;
 } else if (method == "scaling") {
 	optimizerScales.Fill(1.0);
     // Only optimize scaling parameters along the diagonal of the rotation matrix
@@ -417,6 +414,7 @@ if (method == "translation") {
 	metric->SetLambda(LAMBDA);
 	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
+	metric->SetNGFSpacing(ngfSpacing);
 	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNu(NU);
@@ -429,16 +427,12 @@ if (method == "translation") {
 
 	metric->SetRho(RHO);
 	metric->SetRhoDerivative(RHODERIVATIVE);
+	metric->SetGDNumberOfSamples(static_cast<unsigned int>(numberOfPixels * vm["gdpercentage"].as<double>()));
 
 	metric->SetSigma(SIGMA);
 	metric->SetSigmaDerivative(SIGMADERIVATIVE);
 	metric->SetNMIBinNumbers(NMIBINS);
-    // apply parsed NGF‐spacing
-    {
-        auto ngf = boost::any_cast<MovingImageType::SpacingType>(
-            vm["parsed_ngfspacing"].value());
-        metric->SetNGFSpacing(ngf);
-    }
+	metric->SetNMINumberOfSamples(static_cast<unsigned int>(numberOfPixels * vm["nmipercentage"].as<double>()));
 	
 	if (TR!=-99999999)
 	{

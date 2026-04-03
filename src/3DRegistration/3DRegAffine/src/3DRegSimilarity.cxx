@@ -60,7 +60,7 @@ const unsigned int ImageDimension = 3;
 typedef itk::RegularStepGradientDescentOptimizer OptimizerType;
 int main( int argc, char *argv[] )
 {
-    po::options_description desc("B-spline Registration\n"
+    po::options_description desc("Similarity Registration\n"
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
@@ -369,22 +369,7 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 }
 
 	
-	transform->SetIdentity();
-	// allign the center of the images
-	typedef itk::CenteredTransformInitializer<
-			TransformType,
-			FixedImageType,
-			MovingImageType >  TransformInitializerType;
-
-	TransformInitializerType::Pointer initializer = TransformInitializerType::New();
-
-	initializer->SetTransform(   transform );
-	initializer->SetFixedImage(  fixedImage );
-	initializer->SetMovingImage( movingImage );
-	initializer->MomentsOn();
-	initializer->InitializeTransform();
-
-
+	// Transform will be initialized in the --transformin branch or the else branch below.
 
 	  using OptimizerScalesType = OptimizerType::ScalesType;
   OptimizerScalesType optimizerScales(
@@ -419,25 +404,6 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	const unsigned int numberOfParameters =
 			transform->GetNumberOfParameters();
 
-	ParametersType parametersLow( numberOfParameters );
-
-	parametersLow.Fill( 0.0 );
-
-	transform->SetParameters( parametersLow );
-
-
-	// itk::Point<double, 3> center;
-	// itk::Index<3> centerIndex;
-
-	// for (int i = 0; i < 3; ++i) {
-			// 	centerIndex[i] = sourceImage->GetLargestPossibleRegion().GetSize()[i] / 2;
-			// }
-			// sourceImage->TransformIndexToPhysicalPoint(centerIndex, center);
-			// transform->SetCenter(center);
-
-
-
-	registration->SetInitialTransformParameters( transform->GetParameters() );
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
 
@@ -448,6 +414,10 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
 	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
 	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+	const double GDPERCENTAGE  = vm["gdpercentage"].as<double>();
+	const double NMIPERCENTAGE = vm["nmipercentage"].as<double>();
+	const unsigned int numberOfSamplesGD  = static_cast<unsigned int>(numberOfPixels * GDPERCENTAGE);
+	const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
 
 	metric->SetComputeOverlap(METRICOVERLAP);
 	metric->SetOverlapPadding(vm["overlappadding"].as<unsigned int>());
@@ -482,10 +452,12 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 
 	metric->SetRho(RHO);
 	metric->SetRhoDerivative(RHODERIVATIVE);
+	metric->SetGDNumberOfSamples(numberOfSamplesGD);
 
 	metric->SetSigma(SIGMA);
 	metric->SetSigmaDerivative(SIGMADERIVATIVE);
 	metric->SetNMIBinNumbers(NMIBINS);
+	metric->SetNMINumberOfSamples(numberOfSamplesNMI);
 
 	if (TR!=-99999999)
 	{
@@ -508,9 +480,15 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 		TransformReaderType::Pointer transformReader = TransformReaderType::New();
 		transformReader->SetFileName( TIN );
 		transformReader->Update();
-		transform=dynamic_cast<TransformType*>(transformReader->GetTransformList()->front().GetPointer());
-
-		
+		transform = dynamic_cast<TransformType*>(
+			transformReader->GetTransformList()->front().GetPointer());
+		if (!transform)
+		{
+			std::cerr << "Error: Transform file '" << TIN
+			          << "' is not a Similarity3DTransform.\n"
+			             "       Only Similarity3DTransform files are supported by --transformin.\n";
+			return EXIT_FAILURE;
+		}
 	}else
 	{
 		transform->SetIdentity();

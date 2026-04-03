@@ -63,7 +63,7 @@ const unsigned int ImageDimension = 3;
 typedef itk::RegularStepGradientDescentOptimizer OptimizerType;
 int main( int argc, char *argv[] )
 {
-    po::options_description desc("B-spline Registration\n"
+    po::options_description desc("Affine Multi-Level Registration\n"
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"

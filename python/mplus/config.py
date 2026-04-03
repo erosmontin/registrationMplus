@@ -12,8 +12,8 @@ from typing import Optional, Dict, Any
 @dataclass
 class MetricWeights:
     """Weights for the Mplus combined metric."""
-    mi: float = 1.0              # Mutual Information (lambda)
-    ngf: float = 0.0             # Normalized Gradient Field (alpha)
+    mi: float = 1.0              # Mutual Information (alpha)
+    ngf: float = 0.0             # Normalized Gradient Field (lambda)
     mse: float = 0.0             # Mean Squared Error (nu)
     nc: float = 0.0              # Normalized Correlation (yota)
     label: float = 0.0           # Label/Kappa metric
