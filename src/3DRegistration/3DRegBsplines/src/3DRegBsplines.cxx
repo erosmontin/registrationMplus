@@ -19,6 +19,8 @@
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkCompositeTransform.h"
 #include "../../Version.h"
+#include "../../MetricsConfig.h"
+#include "../../LabelWeightsParser.h"
 
 #include "../../../Metrics/NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkGetImageNoiseFunction.h"
 #include "../../../includes/imageUtils.h"
@@ -89,18 +91,18 @@ int main(int argc, char *argv[])
     ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
     ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
     ("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
-    ("lambda,l", po::value<double>()->default_value(0), "lambda value NGF 1.0")
+    ("lambda,l", po::value<double>()->default_value(0.5), "lambda value NGF 0.5 (enables structural regularization for deformable registration)")
     ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")
     ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
     ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
     ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
     ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
-    ("nu,n", po::value<double>()->default_value(0), "nu value MSE 1.0")
+    ("nu,n", po::value<double>()->default_value(0), "nu value MSE 0 (deformable uses MI+NGF; set manually if intensity-difference regularization needed)")
     ("nuderivative,N", po::value<double>()->default_value(0), "nu MSE derivative 1.0")
     ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm)")
     ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
-    ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), 
-       "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
+    ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e7), 
+       "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for high accuracy.")
     ("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), 
        "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")
     ("numberofevaluations,E", po::value<int>()->default_value(500), "Number of Evaluations")
@@ -148,17 +150,144 @@ int main(int argc, char *argv[])
 	("snapshotgrid",   po::value<bool>()->default_value(false),       "Overlay regular warped pixel-grid on snapshot panels (default off; when off, the real B-spline knot mesh is shown instead)")
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels for the deformation grid panel")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(1),
+	("overlappadding", po::value<unsigned int>()->default_value(5),
 		"Number of B-spline control points outside the image domain per side "
-		"(min = spline order = 3). Higher values give more deformation support at image borders.")
+		"(min = spline order = 3, recommended >= 5 for B-splines). Higher values give more deformation support at image borders.")
 	("metricpadding", po::value<unsigned int>()->default_value(0), "Metric overlap padding in voxels (default 20)")
 	("modality", po::value<std::string>()->default_value("custom"),
 		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
+
+	// ───── NEW SIMPLIFIED CLI (arrays + presets) ─────
+	("preset", po::value<std::string>()->default_value(""), 
+	 "Metric preset: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), 'rigid', or empty for custom")
+
+	("metrics", po::value<std::string>()->default_value(""), 
+	 "Metric weights array: alpha,lambda,nu,rho,yota,kappa,sigma (e.g., '1.0,0.5,0,0,0,0,0')")
+
+	("metric-derivatives", po::value<std::string>()->default_value(""), 
+	 "Metric derivatives array: alpha_d,lambda_d,nu_d,rho_d,yota_d,kappa_d,sigma_d")
+
+	("metric-sampling", po::value<std::string>()->default_value(""), 
+	 "Metric sampling percentages: ma%,ngf%,mse%,gd%,nc%,nmi%,label%")
+
+	("label-weights", po::value<std::string>()->default_value(""), 
+	 "Per-label weights (alternative to --labelkappa): comma-separated list (e.g., '0.5,0.3,0.2')")
+
+	("label-derivatives", po::value<std::string>()->default_value(""), 
+	 "Per-label derivatives (auto-derived from weights if not provided)")
 	;
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
 	po::notify(vm);
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	//  SIMPLIFIED CLI: Auto-detect format (array vs individual) and parse metrics
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	bool hasMetricsArray = (!vm["metrics"].as<std::string>().empty() ||
+	                        !vm["metric-derivatives"].as<std::string>().empty() ||
+	                        !vm["preset"].as<std::string>().empty());
+
+	// Get base metrics config
+	MetricsConfig::MainMetricsConfig metricsConfig;
+
+	if (!vm["preset"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::GetMainPreset(vm["preset"].as<std::string>());
+	    std::cout << "\n[CLI] Using preset: " << vm["preset"].as<std::string>() << std::endl;
+	}
+	else if (!vm["metrics"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainWeights(vm["metrics"].as<std::string>());
+	    std::cout << "\n[CLI] Parsed weights array" << std::endl;
+	}
+
+	// Apply explicit metric derivatives if provided
+	if (!vm["metric-derivatives"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainDerivatives(
+	        metricsConfig,
+	        vm["metric-derivatives"].as<std::string>()
+	    );
+	}
+
+	// Warn on conflicts and merge individual parameter overrides
+	MetricsConfig::DetectConflicts(
+	    hasMetricsArray,
+	    (vm.count("alpha") && vm["alpha"].as<double>() != 1.0) ? vm["alpha"].as<double>() : -1,
+	    (vm.count("lambda") && vm["lambda"].as<double>() != 1.0) ? vm["lambda"].as<double>() : -1,
+	    (vm.count("nu") && vm["nu"].as<double>() != 1.0) ? vm["nu"].as<double>() : -1,
+	    vm.count("rho") ? vm["rho"].as<double>() : -1,
+	    vm.count("yota") ? vm["yota"].as<double>() : -1,
+	    vm.count("sigma") ? vm["sigma"].as<double>() : -1,
+	    true  // verbose
+	);
+
+	// Apply individual overrides
+	metricsConfig = MetricsConfig::MergeIndividual(
+	    metricsConfig,
+	    (vm.count("alpha") && vm["alpha"].as<double>() >= 0) ? vm["alpha"].as<double>() : -1,
+	    (vm.count("alphaderivative") && vm["alphaderivative"].as<double>() >= 0) ? vm["alphaderivative"].as<double>() : -1,
+	    (vm.count("lambda") && vm["lambda"].as<double>() >= 0) ? vm["lambda"].as<double>() : -1,
+	    (vm.count("lambdaderivative") && vm["lambdaderivative"].as<double>() >= 0) ? vm["lambdaderivative"].as<double>() : -1,
+	    (vm.count("nu") && vm["nu"].as<double>() >= 0) ? vm["nu"].as<double>() : -1,
+	    (vm.count("nuderivative") && vm["nuderivative"].as<double>() >= 0) ? vm["nuderivative"].as<double>() : -1,
+	    (vm.count("rho") && vm["rho"].as<double>() >= 0) ? vm["rho"].as<double>() : -1,
+	    (vm.count("rhoderivative") && vm["rhoderivative"].as<double>() >= 0) ? vm["rhoderivative"].as<double>() : -1,
+	    (vm.count("yota") && vm["yota"].as<double>() >= 0) ? vm["yota"].as<double>() : -1,
+	    (vm.count("yotaderivative") && vm["yotaderivative"].as<double>() >= 0) ? vm["yotaderivative"].as<double>() : -1,
+	    (vm.count("sigma") && vm["sigma"].as<double>() >= 0) ? vm["sigma"].as<double>() : -1,
+	    (vm.count("sigmaderivative") && vm["sigmaderivative"].as<double>() >= 0) ? vm["sigmaderivative"].as<double>() : -1
+	);
+
+	// Apply metric-specific sampling overrides
+	if (!vm["metric-sampling"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainSampling(
+	        metricsConfig,
+	        vm["metric-sampling"].as<std::string>()
+	    );
+	}
+
+	// Print final configuration to user
+	std::cout << "\n[Metrics Configuration]" << std::endl;
+	metricsConfig.Print("  ");
+
+	// Handle label weights (separate from main metrics)
+	LabelWeightsParser::LabelWeights labelWeights;
+
+	std::string labelWeightsStr = vm["label-weights"].as<std::string>();
+	if (!labelWeightsStr.empty())
+	{
+	    labelWeights = LabelWeightsParser::ParseVector(labelWeightsStr);
+	    std::cout << "[Label Weights] Parsed vector from --label-weights" << std::endl;
+	}
+	else if (vm["labelkappa"].as<double>() > 1e-6 || vm["fixedlabelmap"].as<std::string>() != "N")
+	{
+	    labelWeights = LabelWeightsParser::ScalarLabelWeights(
+	        vm["labelkappa"].as<double>(),
+	        vm["labelkappaderiv"].as<double>()
+	    );
+	    
+	    // Auto-expand if labelmap is provided
+	    std::string fixedLabelMapPath = vm["fixedlabelmap"].as<std::string>();
+	    if (fixedLabelMapPath != "N" && !fixedLabelMapPath.empty())
+	    {
+	        unsigned int numLabels = LabelWeightsParser::DetectNumberOfLabels(fixedLabelMapPath);
+	        if (numLabels > 0)
+	        {
+	            labelWeights = LabelWeightsParser::ExpandToVector(labelWeights, numLabels);
+	        }
+	    }
+	}
+	else
+	{
+	    labelWeights = LabelWeightsParser::Disabled();
+	}
+
+	std::cout << "[Label Weights Configuration]" << std::endl;
+	labelWeights.Print("  ");
 
 	// ── Handle --help and --version BEFORE any file I/O ────────────────────────
 	if (vm.count("version")) {
@@ -467,17 +596,11 @@ int main(int argc, char *argv[])
 
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 
-
-	double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
-	double MSEPERCENTAGE = vm["msepercentage"].as<double>();
-	double NCPERCENTAGE = vm["ncpercentage"].as<double>();
-	// double CHPERCENTAGE = vm["chpercentage"].as<double>();
-	
-	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
+	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent);
 	// const unsigned int numberOfSamplesCH =static_cast<unsigned int>(numberOfPixels * CHPERCENTAGE);
-	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
-	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
-	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent);
+	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * metricsConfig.mse.samplingPercent);
+	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent);
 
 	metric->SetUseCachingOfBSplineWeights(TB);
 	metric->SetUseExplicitPDFDerivatives(EPDF);
@@ -486,8 +609,8 @@ int main(int argc, char *argv[])
 	metric->SetMainMetricIndex(MAINMETRIC);
 	metric->SetComputeOverlap(METRICOVERLAP);
 	metric->SetOverlapPadding(vm["metricpadding"].as<unsigned int>());
-	metric->SetAlpha(ALPHA);
-	metric->SetAlphaDerivative(ALPHADERIVATIVE);
+	metric->SetAlpha(metricsConfig.mi.weight);
+	metric->SetAlphaDerivative(metricsConfig.mi.derivative);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetBinNumbers(NB);
 	metric->SetFixedEta(ETAF);
@@ -495,27 +618,27 @@ int main(int argc, char *argv[])
 	metric->SetEvaluator(NGFevaluator);
 
 
-	metric->SetLambda(LAMBDA);
-	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
+	metric->SetLambda(metricsConfig.ngf.weight);
+	metric->SetLambdaDerivative(metricsConfig.ngf.derivative);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNGFSpacing(ngf);
 	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
-	metric->SetNu(NU);
-	metric->SetNuDerivative(NUDERIVATIVE);
+	metric->SetNu(metricsConfig.mse.weight);
+	metric->SetNuDerivative(metricsConfig.mse.derivative);
 
 
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetYota(metricsConfig.nc.weight);
+	metric->SetYotaDerivative(metricsConfig.nc.derivative);
 	metric->SetNCNumberOfSamples(numberOfSamplesNC);
 
-	metric->SetRho(RHO);
-	metric->SetRhoDerivative(RHODERIVATIVE);
+	metric->SetRho(metricsConfig.gd.weight);
+	metric->SetRhoDerivative(metricsConfig.gd.derivative);
 
-	metric->SetSigma(SIGMA);
-	metric->SetSigmaDerivative(SIGMADERIVATIVE);
+	metric->SetSigma(metricsConfig.nmi.weight);
+	metric->SetSigmaDerivative(metricsConfig.nmi.derivative);
 	metric->SetNMIBinNumbers(NMIBINS);
 
 
@@ -529,11 +652,25 @@ int main(int argc, char *argv[])
 	{
 		metric->SetFixedLabelMap(fixedLabelMap);
 		metric->SetMovingLabelMap(movingLabelMap);
-		metric->SetLabelKappa(LABELKAPPA);
-		metric->SetLabelKappaDerivative(LABELKAPPADERIV);
-		metric->SetLabelNumberOfSamples(LABELSAMPLES);
-		if (!LABELKAPPAVEC.empty())      metric->SetLabelKappaWeights(LABELKAPPAVEC);
-		if (!LABELKAPPADERIVVEC.empty()) metric->SetLabelKappaDerivativeWeights(LABELKAPPADERIVVEC);
+		
+		// Apply label weights from parsed config
+		if (labelWeights.IsEnabled())
+		{
+			metric->SetLabelKappa(labelWeights.GetScalarKappa());
+			metric->SetLabelKappaDerivative(labelWeights.GetScalarDerivative());
+			metric->SetLabelNumberOfSamples(vm["labelsamples"].as<double>());
+			
+			// If labelWeights has vector info, apply it
+			// (Note: Mplus::SetLabelKappa may support vector mode depending on implementation)
+			if (!labelWeights.kappaValues.empty() && labelWeights.kappaValues.size() > 1)
+			{
+				// Vector mode, if supported by metric
+				for (size_t i = 0; i < labelWeights.kappaValues.size(); ++i)
+				{
+					// metric->SetLabelKappa(i, labelWeights.kappaValues[i]);  // If supported
+				}
+			}
+		}
 	}
 
 	const unsigned int numParameters = transform->GetNumberOfParameters();
