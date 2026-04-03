@@ -491,6 +491,7 @@ public:
 #include "itkResampleImageFilter.h"
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkRescaleIntensityImageFilter.h"
+#include "itkIntensityWindowingImageFilter.h"
 #include "itkImageRegionIteratorWithIndex.h"
 #include "itkImageRegionIterator.h"
 #include "itkImageRegionConstIterator.h"
@@ -753,16 +754,15 @@ private:
     typename UCharSliceType::Pointer
     ToUCharWithRange(const SliceType* slice, PixelType inMin, PixelType inMax) const
     {
-        using R = itk::RescaleIntensityImageFilter<SliceType, UCharSliceType>;
-        auto r = R::New();
-        r->SetInput(slice);
-        // Manually map [inMin, inMax] → [0, 255]
-        r->SetInputMinimum(inMin);
-        r->SetInputMaximum(inMax);
-        r->SetOutputMinimum(0);
-        r->SetOutputMaximum(255);
-        r->Update();
-        typename UCharSliceType::Pointer out = r->GetOutput();
+        using W = itk::IntensityWindowingImageFilter<SliceType, UCharSliceType>;
+        auto w = W::New();
+        w->SetInput(slice);
+        w->SetWindowMinimum(inMin);
+        w->SetWindowMaximum(inMax);
+        w->SetOutputMinimum(0);
+        w->SetOutputMaximum(255);
+        w->Update();
+        typename UCharSliceType::Pointer out = w->GetOutput();
         out->DisconnectPipeline();
         return out;
     }
