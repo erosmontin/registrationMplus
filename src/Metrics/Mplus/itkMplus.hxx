@@ -85,6 +85,9 @@ namespace itk
 		m_LabelKappaDerivative = 0.0;
 		m_LabelNumberOfSamples = 20000;
 
+		m_NormalizeMSE = false;
+		m_MSEIntensityRangeSquared = 1.0;
+
 		// per-sub-metric cached values
 		m_LastValMI    = 0.0;
 		m_LastValNGF   = 0.0;
@@ -246,6 +249,18 @@ namespace itk
 				m_MSE->SetFixedImageSamplesIntensityThreshold(this->m_FixedImageThreshold);
 			m_MSE->ReinitializeSeed();
 			m_MSE->Initialize();
+
+			// Cache fixed-image intensity range squared for NormalizeMSE
+			if (this->m_NormalizeMSE)
+			{
+				typedef itk::MinimumMaximumImageCalculator<TFixedImage> MinMaxCalcType;
+				typename MinMaxCalcType::Pointer calc = MinMaxCalcType::New();
+				calc->SetImage(this->m_FixedImage);
+				calc->Compute();
+				const double range = static_cast<double>(calc->GetMaximum())
+				                   - static_cast<double>(calc->GetMinimum());
+				m_MSEIntensityRangeSquared = (range > 1e-6) ? (range * range) : 1.0;
+			}
 		}
 
 		if (this->m_Yota != 0.0 || this->m_YotaDerivative != 0.0)
@@ -598,7 +613,17 @@ namespace itk
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	Mplus<TFixedImage, TMovingImage>::GetMSEValue(const ParametersType &parameters) const
 	{
-		return static_cast<MeasureType>(m_MSE->GetValue(parameters) * this->m_Nu);
+		double raw = m_MSE->GetValue(parameters);
+
+		if (this->m_NormalizeMSE)
+		{
+			// Normalise by the fixed-image intensity range squared so that the
+			// contribution sits in [0,1], comparable to MI/NGF/NC values.
+			// Range is pre-cached in Initialize() to avoid per-call overhead.
+			raw /= this->m_MSEIntensityRangeSquared;
+		}
+
+		return static_cast<MeasureType>(raw * this->m_Nu);
 	}
 
 	// template <class TFixedImage, class TMovingImage>

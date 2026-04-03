@@ -134,6 +134,14 @@ public:
 	itkGetMacro( NuDerivative, double);
 	itkSetMacro( NuDerivative, double);
 
+	/** When true, the raw MSE value is divided by (intensity_range)^2 before
+	 *  applying the Nu weight.  This normalises MSE to [0,1] so it stays
+	 *  comparable in magnitude to MI / NGF / NC.  Intensity range is taken
+	 *  from the fixed image min/max.  Default: false. */
+	itkGetMacro( NormalizeMSE, bool);
+	itkSetMacro( NormalizeMSE, bool);
+	itkBooleanMacro( NormalizeMSE);
+
 	itkGetMacro( Yota, double);
 	itkSetMacro( Yota, double);
 
@@ -355,6 +363,8 @@ protected:
 	double m_NuDerivative;
 	bool m_UseCachingOfBSplineWeights;
 	bool m_UseExplicitPDFDerivatives;
+	bool m_NormalizeMSE;              // divide raw MSE by intensity-range^2 before Nu weighting
+	double m_MSEIntensityRangeSquared; // cached (range^2), computed once in Initialize()
 	int  m_DerivativeMode;     // 0=consistent, 1=normalized, 2=main-metric
 	int  m_MainMetricIndex;    // 0=MI,1=NGF,2=MSE,3=NC,4=Label,5=GD,6=NMI
 	bool   m_AutoEstimateEta;
