@@ -531,7 +531,7 @@ int main(int argc, char *argv[])
 		resampler->Update();
 		ImageType::RegionType meshregionresampled = resampler->GetOutput()->GetLargestPossibleRegion();
 
-		fixedImage->SetRequestedRegion(meshregionresampled);
+		const_cast<ImageType*>(fixedImage.GetPointer())->SetRequestedRegion(meshregionresampled);
 	}
 
 	for (unsigned int i = 0; i < SpaceDimension; ++i)

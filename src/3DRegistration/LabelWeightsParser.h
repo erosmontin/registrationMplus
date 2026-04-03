@@ -55,6 +55,23 @@ public:
         }
 
         /**
+         * Get scalar summary (mean of all label derivatives).
+         * Mirrors GetScalarKappa() for derivatives.
+         */
+        double GetScalarDerivative() const
+        {
+            if (kappaDerivatives.empty())
+                return 0.0;
+            if (kappaDerivatives.size() == 1)
+                return kappaDerivatives[0];
+
+            double sum = 0.0;
+            for (double v : kappaDerivatives)
+                sum += v;
+            return sum / kappaDerivatives.size();
+        }
+
+        /**
          * Check if labels are enabled (any non-zero weight).
          */
         bool IsEnabled() const
