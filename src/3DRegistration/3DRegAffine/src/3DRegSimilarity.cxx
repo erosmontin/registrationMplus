@@ -117,13 +117,13 @@ int main( int argc, char *argv[] )
 		 "Metric preset: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), 'rigid', or empty for custom")
 
 		("metrics", po::value<std::string>()->default_value(""), 
-		 "Metric weights array: alpha,lambda,nu,rho,yota,kappa,sigma (e.g., '1.0,0.5,0,0,0,0,0')")
+		 "Metric weights array: alpha,lambda,nu,rho,yota,sigma (e.g., '1.0,0.5,0,0,0,0')")
 
 		("metric-derivatives", po::value<std::string>()->default_value(""), 
-		 "Metric derivatives array: alpha_d,lambda_d,nu_d,rho_d,yota_d,kappa_d,sigma_d")
+		 "Metric derivatives array: alpha_d,lambda_d,nu_d,rho_d,yota_d,sigma_d")
 
 		("metric-sampling", po::value<std::string>()->default_value(""), 
-		 "Metric sampling percentages: ma%,ngf%,mse%,gd%,nc%,nmi%,label%")
+		 "Metric sampling percentages: ma%,ngf%,mse%,gd%,nc%,nmi% (label sampling → --labelsamples)")
 
 		("label-weights", po::value<std::string>()->default_value(""), 
 		 "Per-label weights (alternative to --labelkappa): comma-separated list (e.g., '0.5,0.3,0.2')")
