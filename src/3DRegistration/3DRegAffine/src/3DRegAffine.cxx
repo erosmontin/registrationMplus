@@ -145,7 +145,7 @@ int main( int argc, char *argv[] )
 	("labelkappaderiv",po::value<double>()->default_value(0.0),       "Global kappa weight for label-map derivative")
 	("labelkappavec",  po::value<std::string>()->default_value(""),   "Per-label kappa (value) weights: 'L1:w1,L2:w2,...'")
 	("labelkappaderivvec", po::value<std::string>()->default_value(""),"Per-label kappa (derivative) weights: 'L1:w1,L2:w2,...'")
-	("labelsamples",   po::value<double>()->default_value(0.1), "Label metric percentage of pixels used (0.1 = 10%)")
+	("labelsamples",   po::value<unsigned int>()->default_value(20000), "Label metric: approximate absolute number of voxel samples used per label (e.g. 20000)")
 	("labelreport",    po::value<int>()->default_value(1),            "Report Dice every N iterations (0 = off)")
 	("snapshotdir",    po::value<std::string>()->default_value("N"), "Directory for iteration snapshots (N = off)")
 	("snapshotevery",  po::value<int>()->default_value(1),            "Save snapshot every N iterations")
@@ -306,7 +306,7 @@ int main( int argc, char *argv[] )
 	// ── label map options ──────────────────────────────────────────
 	const double      LABELKAPPA      = vm["labelkappa"].as<double>();
 	const double      LABELKAPPADERIV = vm["labelkappaderiv"].as<double>();
-	const double LABELSAMPLES   = vm["labelsamples"].as<double>();
+	const unsigned int LABELSAMPLES = vm["labelsamples"].as<unsigned int>();
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 
@@ -582,7 +582,7 @@ if (method == "translation") {
 		{
 			metric->SetLabelKappa(labelWeights.GetScalarKappa());
 			metric->SetLabelKappaDerivative(labelWeights.GetScalarDerivative());
-			metric->SetLabelNumberOfSamples(vm["labelsamples"].as<double>());
+			metric->SetLabelNumberOfSamples(vm["labelsamples"].as<unsigned int>());
 			
 			// If labelWeights has vector info, apply it
 			// (Note: Mplus::SetLabelKappa may support vector mode depending on implementation)

@@ -22,6 +22,7 @@
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include <set>
+#include <iterator>
 // >>>
 
 namespace itk
@@ -1314,23 +1315,60 @@ namespace itk
 	    if (!m_FixedLabelMap || !m_MovingLabelMap) return;
 	    if (m_LabelKappa == 0.0 && m_LabelKappaDerivative == 0.0) return;
 
-	    // Collect unique non-zero labels from both maps
-	    std::set<LabelPixelType> labelSet;
+	    // Collect unique non-zero labels from each map separately, then keep only
+	    // labels present in BOTH maps. A label that exists on only one side
+	    // produces an all-zero binary mask on the other side, and ITK's
+	    // SignedMaurerDistanceMapImageFilter then fills the distance map with
+	    // NumericTraits::max() (~3.4e+38). Squared differences of those
+	    // sentinels overflow into ~1e+35 and swamp every other metric term,
+	    // which freezes the optimizer. Intersecting eliminates that failure
+	    // mode and is the only physically meaningful set anyway: a label that
+	    // is absent on one side has no correspondence to register against.
+	    std::set<LabelPixelType> fixedLabels, movingLabels;
 	    {
 	        itk::ImageRegionConstIterator<LabelImageType> it(
 	            m_FixedLabelMap, m_FixedLabelMap->GetLargestPossibleRegion());
 	        for (; !it.IsAtEnd(); ++it)
-	            if (it.Get() != 0) labelSet.insert(it.Get());
+	            if (it.Get() != 0) fixedLabels.insert(it.Get());
 	    }
 	    {
 	        itk::ImageRegionConstIterator<LabelImageType> it(
 	            m_MovingLabelMap, m_MovingLabelMap->GetLargestPossibleRegion());
 	        for (; !it.IsAtEnd(); ++it)
-	            if (it.Get() != 0) labelSet.insert(it.Get());
+	            if (it.Get() != 0) movingLabels.insert(it.Get());
 	    }
+
+	    std::set<LabelPixelType> labelSet;
+	    std::set_intersection(
+	        fixedLabels.begin(),  fixedLabels.end(),
+	        movingLabels.begin(), movingLabels.end(),
+	        std::inserter(labelSet, labelSet.begin()));
+
+	    // Report any labels we are dropping so cropping issues are visible.
+	    auto reportMissing = [](const std::set<LabelPixelType> & a,
+	                            const std::set<LabelPixelType> & b,
+	                            const char * sideMissing)
+	    {
+	        for (auto v : a)
+	            if (b.find(v) == b.end())
+	                std::cout << "[LabelMetric] WARNING: label "
+	                          << static_cast<int>(v)
+	                          << " present in " << sideMissing
+	                          << " label map only — skipped (no counterpart)."
+	                          << std::endl;
+	    };
+	    reportMissing(fixedLabels,  movingLabels, "fixed");
+	    reportMissing(movingLabels, fixedLabels,  "moving");
+
 	    m_LabelValues.assign(labelSet.begin(), labelSet.end());
 
-	    if (m_LabelValues.empty()) return;
+	    if (m_LabelValues.empty())
+	    {
+	        std::cout << "[LabelMetric] WARNING: no labels are common to fixed "
+	                     "and moving label maps — label term disabled."
+	                  << std::endl;
+	        return;
+	    }
 
 	    // Fixed-image geometry (for fixed distance maps)
 	    const auto & fxSize = this->m_FixedImage->GetLargestPossibleRegion().GetSize();
