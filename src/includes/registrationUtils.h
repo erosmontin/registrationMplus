@@ -3,6 +3,8 @@
 #include <itkLBFGSBOptimizer.h>
 #include <chrono>    // << add this
 #include <iomanip>                       // << for std::setprecision
+#include <algorithm>
+#include <vector>
 
 #include <iostream>
 #include <functional>
@@ -491,6 +493,7 @@ public:
 #include "itkResampleImageFilter.h"
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkRescaleIntensityImageFilter.h"
+#include "itkIntensityWindowingImageFilter.h"
 #include "itkImageRegionIteratorWithIndex.h"
 #include "itkImageRegionIterator.h"
 #include "itkImageRegionConstIterator.h"
@@ -748,6 +751,41 @@ private:
         r->SetOutputMaximum(255);
         r->Update();
         typename UCharSliceType::Pointer out = r->GetOutput();
+        out->DisconnectPipeline();
+        return out;
+    }
+
+    /** Rescale a slice to [0,255] using percentile-based windowing.
+     *  Clips at [loPercentile, hiPercentile] to handle outliers, then maps
+     *  each image independently — preserving good contrast regardless of the
+     *  absolute intensity range (e.g. different scanners or modalities). */
+    typename UCharSliceType::Pointer
+    ToUCharPercentile(const SliceType* slice,
+                      double loPercentile = 1.0,
+                      double hiPercentile = 99.0) const
+    {
+        // Collect all pixel values into a sorted vector for percentile computation
+        std::vector<PixelType> vals;
+        vals.reserve(slice->GetLargestPossibleRegion().GetNumberOfPixels());
+        itk::ImageRegionConstIterator<SliceType> it(slice, slice->GetLargestPossibleRegion());
+        for (it.GoToBegin(); !it.IsAtEnd(); ++it)
+            vals.push_back(it.Get());
+
+        std::sort(vals.begin(), vals.end());
+
+        const size_t N = vals.size();
+        const PixelType wMin = vals[static_cast<size_t>(loPercentile / 100.0 * (N - 1))];
+        const PixelType wMax = vals[static_cast<size_t>(hiPercentile / 100.0 * (N - 1))];
+
+        using W = itk::IntensityWindowingImageFilter<SliceType, UCharSliceType>;
+        auto w = W::New();
+        w->SetInput(slice);
+        w->SetWindowMinimum(wMin == wMax ? wMin - 1 : wMin);
+        w->SetWindowMaximum(wMin == wMax ? wMax + 1 : wMax);
+        w->SetOutputMinimum(0);
+        w->SetOutputMaximum(255);
+        w->Update();
+        typename UCharSliceType::Pointer out = w->GetOutput();
         out->DisconnectPipeline();
         return out;
     }
@@ -1394,22 +1432,25 @@ public:
                 auto fixSlice = ResampleSliceIsotropic(fixSliceRaw);
                 auto movSlice = ResampleSliceIsotropic(movSliceRaw);
 
-                // Checkerboard
-                using CB = itk::CheckerBoardImageFilter<SliceType>;
-                auto cb = CB::New();
-                cb->SetInput1(fixSlice);
-                cb->SetInput2(movSlice);
-                typename CB::PatternArrayType pat;
-                pat.Fill(8);
-                cb->SetCheckerPattern(pat);
-                cb->Update();
-                typename SliceType::Pointer chkSlice = cb->GetOutput();
-                chkSlice->DisconnectPipeline();
+                // Normalise each image independently using percentile windowing
+                // [1st, 99th] percentile clips outliers while preserving visible contrast.
+                // Each image is treated independently so different intensity ranges
+                // (e.g. different scanners/modalities) both look good.
+                auto fUC = ToUCharPercentile(fixSlice.GetPointer());
+                auto mUC = ToUCharPercentile(movSlice.GetPointer());
 
-                // Convert to unsigned-char [0,255]
-                auto fUC  = ToUChar(fixSlice.GetPointer());
-                auto mUC  = ToUChar(movSlice.GetPointer());
-                auto cUC  = ToUChar(chkSlice.GetPointer());
+                // Checkerboard is built from the already-normalised UChar slices
+                // so both patches have comparable contrast in the mosaic.
+                using CBu = itk::CheckerBoardImageFilter<UCharSliceType>;
+                auto cbu = CBu::New();
+                cbu->SetInput1(fUC);
+                cbu->SetInput2(mUC);
+                typename CBu::PatternArrayType patu;
+                patu.Fill(8);
+                cbu->SetCheckerPattern(patu);
+                cbu->Update();
+                typename UCharSliceType::Pointer cUC = cbu->GetOutput();
+                cUC->DisconnectPipeline();
 
                 // Convert all 3 grayscale panels to RGB
                 auto fRGB = GrayToRGB(fUC.GetPointer());

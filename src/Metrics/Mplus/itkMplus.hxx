@@ -23,6 +23,7 @@
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include <set>
+#include <iterator>
 // >>>
 
 namespace itk
@@ -90,6 +91,9 @@ namespace itk
 			m_LabelNarrowBandWidth = 5.0;
 			m_LabelUseHuber        = false;
 			m_LabelHuberDelta      = 0.25;
+
+		m_NormalizeMSE = false;
+		m_MSEIntensityRangeSquared = 1.0;
 
 		// per-sub-metric cached values
 		m_LastValMI    = 0.0;
@@ -252,6 +256,18 @@ namespace itk
 				m_MSE->SetFixedImageSamplesIntensityThreshold(this->m_FixedImageThreshold);
 			m_MSE->ReinitializeSeed();
 			m_MSE->Initialize();
+
+			// Cache fixed-image intensity range squared for NormalizeMSE
+			if (this->m_NormalizeMSE)
+			{
+				typedef itk::MinimumMaximumImageCalculator<TFixedImage> MinMaxCalcType;
+				typename MinMaxCalcType::Pointer calc = MinMaxCalcType::New();
+				calc->SetImage(this->m_FixedImage);
+				calc->Compute();
+				const double range = static_cast<double>(calc->GetMaximum())
+				                   - static_cast<double>(calc->GetMinimum());
+				m_MSEIntensityRangeSquared = (range > 1e-6) ? (range * range) : 1.0;
+			}
 		}
 
 		if (this->m_Yota != 0.0 || this->m_YotaDerivative != 0.0)
@@ -604,7 +620,17 @@ namespace itk
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	Mplus<TFixedImage, TMovingImage>::GetMSEValue(const ParametersType &parameters) const
 	{
-		return static_cast<MeasureType>(m_MSE->GetValue(parameters) * this->m_Nu);
+		double raw = m_MSE->GetValue(parameters);
+
+		if (this->m_NormalizeMSE)
+		{
+			// Normalise by the fixed-image intensity range squared so that the
+			// contribution sits in [0,1], comparable to MI/NGF/NC values.
+			// Range is pre-cached in Initialize() to avoid per-call overhead.
+			raw /= this->m_MSEIntensityRangeSquared;
+		}
+
+		return static_cast<MeasureType>(raw * this->m_Nu);
 	}
 
 	// template <class TFixedImage, class TMovingImage>
@@ -957,6 +983,12 @@ namespace itk
 	Mplus<TFixedImage, TMovingImage>::GetMSEDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 		m_MSE->GetDerivative(parameters, derivative);
+		if (this->m_NormalizeMSE)
+		{
+			const double inv = 1.0 / this->m_MSEIntensityRangeSquared;
+			for (unsigned int i = 0; i < derivative.size(); ++i)
+				derivative[i] *= inv;
+		}
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -998,6 +1030,14 @@ namespace itk
 			rawValC = m_MSE->GetValue(parameters);
 		else if (this->m_NuDerivative != 0.0)
 			m_MSE->GetDerivative(parameters, rawDerC);
+		// Apply MSE normalisation: divide both value and derivative by range^2
+		if (this->m_NormalizeMSE)
+		{
+			const double inv = 1.0 / this->m_MSEIntensityRangeSquared;
+			rawValC *= inv;
+			for (unsigned int i = 0; i < nParams; ++i)
+				rawDerC[i] *= inv;
+		}
 
 		// GD (Gradient Difference)
 		if (this->m_Rho != 0.0 && this->m_RhoDerivative != 0.0)
@@ -1330,10 +1370,13 @@ namespace itk
 	    if (!m_FixedLabelMap || !m_MovingLabelMap) return;
 	    if (m_LabelKappa == 0.0 && m_LabelKappaDerivative == 0.0) return;
 
-	    // Collect unique non-zero labels from both maps and count support
-	    std::set<LabelPixelType> labelSet;
+	    // Collect unique non-zero labels from each map and count support.  The
+	    // metric only evaluates labels present in both maps; one-sided labels
+	    // produce invalid/sentinel distance maps and overwhelm the loss.
 	    std::map<LabelPixelType, unsigned long long> fixedCounts;
 	    std::map<LabelPixelType, unsigned long long> movingCounts;
+	    std::set<LabelPixelType> fixedLabels;
+	    std::set<LabelPixelType> movingLabels;
 	    {
 	        itk::ImageRegionConstIterator<LabelImageType> it(
 	            m_FixedLabelMap, m_FixedLabelMap->GetLargestPossibleRegion());
@@ -1341,7 +1384,7 @@ namespace itk
 	        {
 	            const LabelPixelType v = it.Get();
 	            if (v == 0) continue;
-	            labelSet.insert(v);
+	            fixedLabels.insert(v);
 	            ++fixedCounts[v];
 	        }
 	    }
@@ -1352,11 +1395,40 @@ namespace itk
 	        {
 	            const LabelPixelType v = it.Get();
 	            if (v == 0) continue;
-	            labelSet.insert(v);
+	            movingLabels.insert(v);
 	            ++movingCounts[v];
 	        }
 	    }
-	    if (labelSet.empty()) return;
+
+	    std::set<LabelPixelType> labelSet;
+	    std::set_intersection(
+	        fixedLabels.begin(),  fixedLabels.end(),
+	        movingLabels.begin(), movingLabels.end(),
+	        std::inserter(labelSet, labelSet.begin()));
+
+	    // Report any labels we are dropping so cropping issues are visible.
+	    auto reportMissing = [](const std::set<LabelPixelType> & a,
+	                            const std::set<LabelPixelType> & b,
+	                            const char * sideMissing)
+	    {
+	        for (auto v : a)
+	            if (b.find(v) == b.end())
+	                std::cout << "[LabelMetric] WARNING: label "
+	                          << static_cast<int>(v)
+	                          << " present in " << sideMissing
+	                          << " label map only — skipped (no counterpart)."
+	                          << std::endl;
+	    };
+	    reportMissing(fixedLabels,  movingLabels, "fixed");
+	    reportMissing(movingLabels, fixedLabels,  "moving");
+
+	    if (labelSet.empty())
+	    {
+	        std::cout << "[LabelMetric] WARNING: no labels are common to fixed "
+	                     "and moving label maps — label term disabled."
+	                  << std::endl;
+	        return;
+	    }
 
 	    // Fixed-image geometry (for fixed distance maps)
 	    const auto & fxSize = this->m_FixedImage->GetLargestPossibleRegion().GetSize();
@@ -1610,8 +1682,9 @@ namespace itk
 
 	        if (n == 0) continue;
 
-	        // Scale by kappaL / N and add to output derivative
-	        const double scale = kappaL / static_cast<double>(n);
+	        // Scale by m_LabelKappa * kappaL / N — must include m_LabelKappa to
+	        // match GetKappaValue which returns m_LabelKappa * totalValue.
+	        const double scale = m_LabelKappa * kappaL / static_cast<double>(n);
 	        #pragma omp parallel for
 	        for (unsigned int j = 0; j < nParams; ++j)
 	            derivative[j] += scale * localDeriv[j];
@@ -1730,16 +1803,17 @@ namespace itk
 
 	        totalValue += kappaV * sumSqDiff / static_cast<double>(n);
 
-	        const double scaleD = kappaD / static_cast<double>(n);
-	        #pragma omp parallel for
-	        for (unsigned int j = 0; j < nParams; ++j)
-	            derivative[j] += scaleD * localDeriv[j];
+        // Include m_LabelKappa to keep value/derivative consistent.
+        const double scaleD = m_LabelKappa * kappaD / static_cast<double>(n);
+        #pragma omp parallel for
+        for (unsigned int j = 0; j < nParams; ++j)
+            derivative[j] += scaleD * localDeriv[j];
 
-	        double dice = 0.0;
-	        if (countF + countM > 0)
-	            dice = 2.0 * countIntersect / static_cast<double>(countF + countM);
-	        m_LastDice[L] = dice;
-	    }
+        double dice = 0.0;
+        if (countF + countM > 0)
+            dice = 2.0 * countIntersect / static_cast<double>(countF + countM);
+        m_LastDice[L] = dice;
+    }
 
 	    // Return unweighted value; caller applies the global label weight.
 	    value = static_cast<MeasureType>(totalValue);

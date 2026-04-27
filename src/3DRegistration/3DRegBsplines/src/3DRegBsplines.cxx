@@ -20,6 +20,8 @@
 #include "itkNearestNeighborInterpolateImageFunction.h"
 #include "itkCompositeTransform.h"
 #include "../../Version.h"
+#include "../../MetricsConfig.h"
+#include "../../LabelWeightsParser.h"
 
 #include "../../../Metrics/NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkGetImageNoiseFunction.h"
 #include "../../../includes/imageUtils.h"
@@ -90,18 +92,18 @@ int main(int argc, char *argv[])
     ("mattesnumberofbins,b", po::value<int>()->default_value(64), "Mattes number of bins 64")
     ("bsplinecaching,B", po::value<bool>()->default_value(true), "B-spline caching, 1 for true")
     ("explicitPDFderivatives", po::value<bool>()->default_value(false), "Explicit PDF derivatives, 0 for false")
-    ("lambda,l", po::value<double>()->default_value(0), "lambda value NGF 1.0")
+    ("lambda,l", po::value<double>()->default_value(0.5), "lambda value NGF 0.5 (enables structural regularization for deformable registration)")
     ("lambdaderivative,L", po::value<double>()->default_value(0), "Lambda derivative NGF 0 no derivatives")
     ("etavaluefixed,r", po::value<double>()->default_value(-1), "Eta value fixed image(NGF noise) -1 (autodetermine)")
     ("etavaluemoving,s", po::value<double>()->default_value(-1), "Eta value moving image (NGF noise) -1 (autodetermine)")
     ("NGFevaluator", po::value<int>()->default_value(0), "NGF Evaluator (0 scalar,1cross,2scdelta,3Delta,4Delta2)")
     ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
-    ("nu,n", po::value<double>()->default_value(0), "nu value MSE 1.0")
+    ("nu,n", po::value<double>()->default_value(0), "nu value MSE 0 (deformable uses MI+NGF; set manually if intensity-difference regularization needed)")
     ("nuderivative,N", po::value<double>()->default_value(0), "nu MSE derivative 1.0")
     ("gridresolution,g", po::value<double>()->default_value(50), "Mesh resolution (mm)")
     ("maxnumberofiterations,I", po::value<int>()->default_value(1000), "Max number of Iterations 1000")
-    ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e12), 
-       "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for extremely high accuracy.")
+    ("costfunctionconvergencefactor,F", po::value<double>()->default_value(1.e7), 
+       "CostFunctionConvergenceFactor 1e+12 for low accuracy; 1e+7 for moderate accuracy and 1e+1 for high accuracy.")
     ("projectedgradienttolerance,P", po::value<double>()->default_value(1.e-5), 
        "ProjectedGradientTolerance. Algorithm terminates when the project gradient is below the tolerance. Default value is 1e-5.")
     ("numberofevaluations,E", po::value<int>()->default_value(500), "Number of Evaluations")
@@ -121,6 +123,7 @@ int main(int argc, char *argv[])
     ("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NC, 0 = no derivatives")
 	("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
 	("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
+	("normalizemse",  po::value<bool>()->default_value(false), "Normalize MSE by intensity-range^2 to keep it comparable to MI/NGF/NC (default false)")
 	("gdpercentage",   po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
 	("nmipercentage",  po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
 	("ncpercentage", po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
@@ -156,17 +159,146 @@ int main(int argc, char *argv[])
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels for the deformation grid panel")
 	("snapshotlinewidth", po::value<double>()->default_value(0.0),    "Overlay line width in pixels (0 = auto)")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(1),
+	("overlappadding", po::value<unsigned int>()->default_value(5),
 		"Number of B-spline control points outside the image domain per side "
-		"(min = spline order = 3). Higher values give more deformation support at image borders.")
+		"(min = spline order = 3, recommended >= 5 for B-splines). Higher values give more deformation support at image borders.")
 	("metricpadding", po::value<unsigned int>()->default_value(0), "Metric overlap padding in voxels (default 20)")
 	("modality", po::value<std::string>()->default_value("custom"),
 		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
+
+	// ───── NEW SIMPLIFIED CLI (arrays + presets) ─────
+	("preset", po::value<std::string>()->default_value(""), 
+	 "Metric preset: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), 'rigid', or empty for custom")
+
+	("metrics", po::value<std::string>()->default_value(""), 
+	 "Metric weights array: alpha,lambda,nu,rho,yota,sigma (e.g., '1.0,0.5,0,0,0,0')")
+
+	("metric-derivatives", po::value<std::string>()->default_value(""), 
+	 "Metric derivatives array: alpha_d,lambda_d,nu_d,rho_d,yota_d,sigma_d")
+
+	("metric-sampling", po::value<std::string>()->default_value(""), 
+	 "Metric sampling percentages: ma%,ngf%,mse%,gd%,nc%,nmi% (label sampling → --labelsamples)")
+
+	("label-weights", po::value<std::string>()->default_value(""), 
+	 "Per-label weights (alternative to --labelkappa): comma-separated list (e.g., '0.5,0.3,0.2')")
+
+	("label-derivatives", po::value<std::string>()->default_value(""), 
+	 "Per-label derivatives (auto-derived from weights if not provided)")
 	;
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
 	po::notify(vm);
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	//  SIMPLIFIED CLI: Auto-detect format (array vs individual) and parse metrics
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	bool hasMetricsArray = (!vm["metrics"].as<std::string>().empty() ||
+	                        !vm["metric-derivatives"].as<std::string>().empty() ||
+	                        !vm["preset"].as<std::string>().empty());
+
+	// Get base metrics config
+	MetricsConfig::MainMetricsConfig metricsConfig;
+
+	if (!vm["preset"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::GetMainPreset(vm["preset"].as<std::string>());
+	    std::cout << "\n[CLI] Using preset: " << vm["preset"].as<std::string>() << std::endl;
+	}
+	else if (!vm["metrics"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainWeights(vm["metrics"].as<std::string>());
+	    std::cout << "\n[CLI] Parsed weights array" << std::endl;
+	}
+
+	// Apply explicit metric derivatives if provided
+	if (!vm["metric-derivatives"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainDerivatives(
+	        metricsConfig,
+	        vm["metric-derivatives"].as<std::string>()
+	    );
+	}
+
+	// Warn on conflicts and merge individual parameter overrides.
+	// Use !vm[x].defaulted() to detect parameters explicitly passed on the CLI
+	// (vm.count() is always 1 for params with default_value, which is wrong).
+	MetricsConfig::DetectConflicts(
+	    hasMetricsArray,
+	    !vm["alpha"].defaulted()  ? vm["alpha"].as<double>()  : -1,
+	    !vm["lambda"].defaulted() ? vm["lambda"].as<double>() : -1,
+	    !vm["nu"].defaulted()     ? vm["nu"].as<double>()     : -1,
+	    !vm["rho"].defaulted()    ? vm["rho"].as<double>()    : -1,
+	    !vm["yota"].defaulted()   ? vm["yota"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()  ? vm["sigma"].as<double>()  : -1,
+	    true  // verbose
+	);
+
+	// Apply individual overrides (only when explicitly passed on CLI)
+	metricsConfig = MetricsConfig::MergeIndividual(
+	    metricsConfig,
+	    !vm["alpha"].defaulted()           ? vm["alpha"].as<double>()           : -1,
+	    !vm["alphaderivative"].defaulted()  ? vm["alphaderivative"].as<double>()  : -1,
+	    !vm["lambda"].defaulted()           ? vm["lambda"].as<double>()           : -1,
+	    !vm["lambdaderivative"].defaulted() ? vm["lambdaderivative"].as<double>() : -1,
+	    !vm["nu"].defaulted()               ? vm["nu"].as<double>()               : -1,
+	    !vm["nuderivative"].defaulted()     ? vm["nuderivative"].as<double>()     : -1,
+	    !vm["rho"].defaulted()              ? vm["rho"].as<double>()              : -1,
+	    !vm["rhoderivative"].defaulted()    ? vm["rhoderivative"].as<double>()    : -1,
+	    !vm["yota"].defaulted()             ? vm["yota"].as<double>()             : -1,
+	    !vm["yotaderivative"].defaulted()   ? vm["yotaderivative"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()            ? vm["sigma"].as<double>()            : -1,
+	    !vm["sigmaderivative"].defaulted()  ? vm["sigmaderivative"].as<double>()  : -1
+	);
+
+	// Apply metric-specific sampling overrides
+	if (!vm["metric-sampling"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainSampling(
+	        metricsConfig,
+	        vm["metric-sampling"].as<std::string>()
+	    );
+	}
+
+	// Print final configuration to user
+	std::cout << "\n[Metrics Configuration]" << std::endl;
+	metricsConfig.Print("  ");
+
+	// Handle label weights (separate from main metrics)
+	LabelWeightsParser::LabelWeights labelWeights;
+
+	std::string labelWeightsStr = vm["label-weights"].as<std::string>();
+	if (!labelWeightsStr.empty())
+	{
+	    labelWeights = LabelWeightsParser::ParseVector(labelWeightsStr);
+	    std::cout << "[Label Weights] Parsed vector from --label-weights" << std::endl;
+	}
+	else if (vm["labelkappa"].as<double>() > 1e-6 || vm["fixedlabelmap"].as<std::string>() != "N")
+	{
+	    labelWeights = LabelWeightsParser::ScalarLabelWeights(
+	        vm["labelkappa"].as<double>(),
+	        vm["labelkappaderiv"].as<double>()
+	    );
+	    
+	    // Auto-expand if labelmap is provided
+	    std::string fixedLabelMapPath = vm["fixedlabelmap"].as<std::string>();
+	    if (fixedLabelMapPath != "N" && !fixedLabelMapPath.empty())
+	    {
+	        unsigned int numLabels = LabelWeightsParser::DetectNumberOfLabels(fixedLabelMapPath);
+	        if (numLabels > 0)
+	        {
+	            labelWeights = LabelWeightsParser::ExpandToVector(labelWeights, numLabels);
+	        }
+	    }
+	}
+	else
+	{
+	    labelWeights = LabelWeightsParser::Disabled();
+	}
+
+	std::cout << "[Label Weights Configuration]" << std::endl;
+	labelWeights.Print("  ");
 
 	// ── Handle --help and --version BEFORE any file I/O ────────────────────────
 	if (vm.count("version")) {
@@ -543,79 +675,80 @@ int main(int argc, char *argv[])
 		resampler->Update();
 		ImageType::RegionType meshregionresampled = resampler->GetOutput()->GetLargestPossibleRegion();
 
-		fixedImage->SetRequestedRegion(meshregionresampled);
+		const_cast<ImageType*>(fixedImage.GetPointer())->SetRequestedRegion(meshregionresampled);
 	}
 
-	itk::Vector<double, SpaceDimension> axisPadding;
-	axisPadding.Fill(0.0);
+	// ---------------------------------------------------------------
+	// B-spline domain setup: centre the grid on the image anatomy.
+	//
+	// The domain is defined by Origin, PhysicalDimensions and Direction.
+	// ITK interprets PhysicalDimensions[i] as the extent along the i-th
+	// column of the Direction matrix.  To guarantee centring for ANY
+	// direction matrix (including oblique acquisitions), we:
+	//   1) compute PhysicalDimensions = imageExtent + 2*padding
+	//   2) compute the image centre in world coordinates (full matrix)
+	//   3) derive Origin so the domain centre == image centre
+	// ---------------------------------------------------------------
+
+	const unsigned int borderNodesPerSide =
+		vm["overlappadding"].as<unsigned int>();
+	const double extension = borderNodesPerSide * GRIDRESOLUTION;
+
+	// 1) Physical dimensions & mesh size per parametric axis
 	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
-			// Number of extra B-spline control points outside the image domain
-			// per side. ITK internally handles the SplineOrder border
-			// coefficients; this setting only controls how far the domain
-			// extends beyond the anatomy for better edge deformation.
-			const unsigned int borderNodesPerSide =
-				vm["overlappadding"].as<unsigned int>();
-			const double extension = borderNodesPerSide * GRIDRESOLUTION;
-			const double totalPad = meshMargin + extension;
-			axisPadding[i] = totalPad;
+		fixedPhysicalDimensions[i] =
+			meshspacing[i] * (meshsize[i] - 1)
+			+ 2.0 * meshMargin
+			+ 2.0 * extension;
 
-			// Grow the physical size along each transform-domain axis.
-			fixedPhysicalDimensions[i] =
-				meshspacing[i] * (meshsize[i] - 1)
-				+ 2.0 * totalPad;
+		const unsigned int totalGridNodes =
+			static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
 
-			// Recompute how many grid-nodes you need.
-			const unsigned int totalGridNodes =
-				static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
-
-			// Subtract the spline order to get the final meshSize.
-			meshSize[i] = totalGridNodes > SplineOrder
-						? totalGridNodes - SplineOrder
-						: 1;  // guard against too small
-
-			if (vm["verbose"].as<bool>())
-			{
-				std::cout
-				<< "Dim " << i
-				<< ", axisPad = " << totalPad
-				<< ", physSize = " << fixedPhysicalDimensions[i]
-				<< ", meshSize = " << meshSize[i]
-				<< std::endl;
-			}
+		meshSize[i] = totalGridNodes > SplineOrder
+					? totalGridNodes - SplineOrder
+					: 1;
 	}
 
-	// Shift the mesh origin "before" the anatomy along the full transform
-	// domain basis, not just by the sign of the diagonal. This keeps the
-	// domain placement correct for axis permutations and oblique directions.
-	for (unsigned int row = 0; row < SpaceDimension; ++row)
+	// 2) Image centre in world coordinates (uses full direction matrix)
+	//    imageCenter = meshorigin + Direction * (spacing .* (size-1)) / 2
+	TransformType::OriginType imageCenter;
+	for (unsigned int j = 0; j < SpaceDimension; ++j)
 	{
-		fixedOrigin[row] = meshorigin[row];
-		for (unsigned int col = 0; col < SpaceDimension; ++col)
+		imageCenter[j] = meshorigin[j];
+		for (unsigned int i = 0; i < SpaceDimension; ++i)
 		{
-			fixedOrigin[row] -= meshdirection[row][col] * axisPadding[col];
+			imageCenter[j] += meshdirection[j][i]
+				* meshspacing[i] * (meshsize[i] - 1) * 0.5;
+		}
+	}
+
+	// 3) Origin = imageCenter - Direction * PhysicalDimensions / 2
+	for (unsigned int j = 0; j < SpaceDimension; ++j)
+	{
+		fixedOrigin[j] = imageCenter[j];
+		for (unsigned int i = 0; i < SpaceDimension; ++i)
+		{
+			fixedOrigin[j] -= meshdirection[j][i]
+				* fixedPhysicalDimensions[i] * 0.5;
 		}
 	}
 
 	if (vm["verbose"].as<bool>())
 	{
-		std::cout << "[GridPosition] Transform domain origin = [";
-		for (unsigned int d = 0; d < SpaceDimension; ++d)
+		for (unsigned int i = 0; i < SpaceDimension; ++i)
 		{
-			if (d != 0) std::cout << ", ";
-			std::cout << fixedOrigin[d];
+			std::cout
+				<< "Dim " << i
+				<< ", origin = " << fixedOrigin[i]
+				<< ", physSize = " << fixedPhysicalDimensions[i]
+				<< ", meshSize = " << meshSize[i]
+				<< std::endl;
 		}
-		std::cout << "] direction = [";
-		for (unsigned int row = 0; row < SpaceDimension; ++row)
-		{
-			if (row != 0) std::cout << "; ";
-			for (unsigned int col = 0; col < SpaceDimension; ++col)
-			{
-				if (col != 0) std::cout << ", ";
-				std::cout << meshdirection[row][col];
-			}
-		}
-		std::cout << "]" << std::endl;
+		std::cout << "Image centre: ("
+			<< imageCenter[0] << ", "
+			<< imageCenter[1] << ", "
+			<< imageCenter[2] << ")" << std::endl;
 	}
 
 	transform->SetTransformDomainOrigin(fixedOrigin);
@@ -634,17 +767,11 @@ int main(int argc, char *argv[])
 
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 
-
-	double NGFPERCENTAGE = vm["ngfpercentage"].as<double>();
-	double MSEPERCENTAGE = vm["msepercentage"].as<double>();
-	double NCPERCENTAGE = vm["ncpercentage"].as<double>();
-	// double CHPERCENTAGE = vm["chpercentage"].as<double>();
-	
-	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
+	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent);
 	// const unsigned int numberOfSamplesCH =static_cast<unsigned int>(numberOfPixels * CHPERCENTAGE);
-	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
-	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
-	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent);
+	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * metricsConfig.mse.samplingPercent);
+	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent);
 	const unsigned int numberOfSamplesLabel = RegCommon::ResolveLabelSampleCount(LABELSAMPLES, numberOfPixels);
 
 	metric->SetUseCachingOfBSplineWeights(TB);
@@ -654,8 +781,8 @@ int main(int argc, char *argv[])
 	metric->SetMainMetricIndex(MAINMETRIC);
 	metric->SetComputeOverlap(METRICOVERLAP);
 	metric->SetOverlapPadding(vm["metricpadding"].as<unsigned int>());
-	metric->SetAlpha(ALPHA);
-	metric->SetAlphaDerivative(ALPHADERIVATIVE);
+	metric->SetAlpha(metricsConfig.mi.weight);
+	metric->SetAlphaDerivative(metricsConfig.mi.derivative);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetBinNumbers(NB);
 	metric->SetFixedEta(ETAF);
@@ -663,26 +790,27 @@ int main(int argc, char *argv[])
 	metric->SetEvaluator(NGFevaluator);
 
 
-	metric->SetLambda(LAMBDA);
-	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
+	metric->SetLambda(metricsConfig.ngf.weight);
+	metric->SetLambdaDerivative(metricsConfig.ngf.derivative);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNGFSpacing(ngf);
 	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
-	metric->SetNu(NU);
-	metric->SetNuDerivative(NUDERIVATIVE);
+	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
+	metric->SetNu(metricsConfig.mse.weight);
+	metric->SetNuDerivative(metricsConfig.mse.derivative);
 
 
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetYota(metricsConfig.nc.weight);
+	metric->SetYotaDerivative(metricsConfig.nc.derivative);
 	metric->SetNCNumberOfSamples(numberOfSamplesNC);
 
-	metric->SetRho(RHO);
-	metric->SetRhoDerivative(RHODERIVATIVE);
+	metric->SetRho(metricsConfig.gd.weight);
+	metric->SetRhoDerivative(metricsConfig.gd.derivative);
 
-	metric->SetSigma(SIGMA);
-	metric->SetSigmaDerivative(SIGMADERIVATIVE);
+	metric->SetSigma(metricsConfig.nmi.weight);
+	metric->SetSigmaDerivative(metricsConfig.nmi.derivative);
 	metric->SetNMIBinNumbers(NMIBINS);
 
 
@@ -696,8 +824,8 @@ int main(int argc, char *argv[])
 	{
 		metric->SetFixedLabelMap(fixedLabelMap);
 		metric->SetMovingLabelMap(movingLabelMap);
-		metric->SetLabelKappa(LABELKAPPA);
-		metric->SetLabelKappaDerivative(LABELKAPPADERIV);
+		metric->SetLabelKappa(labelWeights.IsEnabled() ? labelWeights.GetScalarKappa() : LABELKAPPA);
+		metric->SetLabelKappaDerivative(labelWeights.IsEnabled() ? labelWeights.GetScalarDerivative() : LABELKAPPADERIV);
 		metric->SetLabelNumberOfSamples(numberOfSamplesLabel);
 		metric->SetLabelDistanceMax(LABELDISTMAX);
 		metric->SetLabelUseNarrowBand(LABELNARROWBAND);

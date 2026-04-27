@@ -13,6 +13,8 @@
 #include "itkTransformFileWriter.h"
 #include "itkTransformFileReader.h"
 #include "../../Version.h"
+#include "../../MetricsConfig.h"
+#include "../../LabelWeightsParser.h"
 #include "itkSimilarity3DTransform.h"
 #include "../../../Metrics/NGF/NGFImageMetric/NGFImageToImageMetric/Code/itkGetImageNoiseFunction.h"
 #include "../../../includes/imageUtils.h"
@@ -60,7 +62,7 @@ const unsigned int ImageDimension = 3;
 typedef itk::RegularStepGradientDescentOptimizer OptimizerType;
 int main( int argc, char *argv[] )
 {
-    po::options_description desc("B-spline Registration\n"
+    po::options_description desc("Similarity Registration\n"
 	"Dr. Eros Montin Ph.D., 2014\n"
 	"eros.montin@gmail.com\n\n"
 	"cite us:\n\nMontin, E., Belfatto, A., Bologna, M., Meroni, S., Cavatorta, C., Pecori, E., Diletto, B., Massimino, M., Oprandi, M. C., Poggi, G., Arrigoni, F., Peruzzo, D., Pignoli, E., Gandola, L., Cerveri, P., & Mainardi, L. (2020). A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Medical & biological engineering & computing, 58(4), 843–855. https://doi.org/10.1007/s11517-019-02109-4\n\n"
@@ -104,10 +106,30 @@ int main( int argc, char *argv[] )
 		("yota,y", po::value<double>(&YOTA)->default_value(0), "Yota value NC (Normalized Correlation) weight")
 		("yotaderivative,Y", po::value<double>(&YOTADERIVATIVE)->default_value(0), "Yota derivative NC, 0 = no derivatives")        
 		("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
-        ("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
-			("gdpercentage",    po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
-			("nmipercentage",   po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
-		("ncpercentage", po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
+		("normalizemse",    po::value<bool>()->default_value(false), "Normalize MSE by intensity-range^2 to keep it comparable to MI/NGF/NC (default false)")
+		("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
+		("gdpercentage",    po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
+		("nmipercentage",   po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
+		("ncpercentage",    po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
+
+		// ───── NEW SIMPLIFIED CLI (arrays + presets) ─────
+		("preset", po::value<std::string>()->default_value(""), 
+		 "Metric preset: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), 'rigid', or empty for custom")
+
+		("metrics", po::value<std::string>()->default_value(""), 
+		 "Metric weights array: alpha,lambda,nu,rho,yota,sigma (e.g., '1.0,0.5,0,0,0,0')")
+
+		("metric-derivatives", po::value<std::string>()->default_value(""), 
+		 "Metric derivatives array: alpha_d,lambda_d,nu_d,rho_d,yota_d,sigma_d")
+
+		("metric-sampling", po::value<std::string>()->default_value(""), 
+		 "Metric sampling percentages: ma%,ngf%,mse%,gd%,nc%,nmi% (label sampling → --labelsamples)")
+
+		("label-weights", po::value<std::string>()->default_value(""), 
+		 "Per-label weights (alternative to --labelkappa): comma-separated list (e.g., '0.5,0.3,0.2')")
+
+		("label-derivatives", po::value<std::string>()->default_value(""), 
+		 "Per-label derivatives (auto-derived from weights if not provided)")
 		("rho", po::value<double>()->default_value(0.0), "Rho weight for Gradient Difference (GD)")
 		("rhoderivative", po::value<double>()->default_value(0.0), "Rho derivative for GD")
 		("sigma", po::value<double>()->default_value(0.0), "Sigma weight for Normalized Mutual Information (NMI)")
@@ -147,6 +169,116 @@ int main( int argc, char *argv[] )
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	//  SIMPLIFIED CLI: Auto-detect format (array vs individual) and parse metrics
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	bool hasMetricsArray = (!vm["metrics"].as<std::string>().empty() ||
+	                        !vm["metric-derivatives"].as<std::string>().empty() ||
+	                        !vm["preset"].as<std::string>().empty());
+
+	// Get base metrics config
+	MetricsConfig::MainMetricsConfig metricsConfig;
+
+	if (!vm["preset"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::GetMainPreset(vm["preset"].as<std::string>());
+	    std::cout << "\n[CLI] Using preset: " << vm["preset"].as<std::string>() << std::endl;
+	}
+	else if (!vm["metrics"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainWeights(vm["metrics"].as<std::string>());
+	    std::cout << "\n[CLI] Parsed weights array" << std::endl;
+	}
+
+	// Apply explicit metric derivatives if provided
+	if (!vm["metric-derivatives"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainDerivatives(
+	        metricsConfig,
+	        vm["metric-derivatives"].as<std::string>()
+	    );
+	}
+
+	// Warn on conflicts and merge individual parameter overrides.
+	// Use !vm[x].defaulted() to detect parameters explicitly passed on the CLI
+	// (vm.count() is always 1 for params with default_value, which is wrong).
+	MetricsConfig::DetectConflicts(
+	    hasMetricsArray,
+	    !vm["alpha"].defaulted()  ? vm["alpha"].as<double>()  : -1,
+	    !vm["lambda"].defaulted() ? vm["lambda"].as<double>() : -1,
+	    !vm["nu"].defaulted()     ? vm["nu"].as<double>()     : -1,
+	    !vm["rho"].defaulted()    ? vm["rho"].as<double>()    : -1,
+	    !vm["yota"].defaulted()   ? vm["yota"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()  ? vm["sigma"].as<double>()  : -1,
+	    true  // verbose
+	);
+
+	// Apply individual overrides (only when explicitly passed on CLI)
+	metricsConfig = MetricsConfig::MergeIndividual(
+	    metricsConfig,
+	    !vm["alpha"].defaulted()           ? vm["alpha"].as<double>()           : -1,
+	    !vm["alphaderivative"].defaulted()  ? vm["alphaderivative"].as<double>()  : -1,
+	    !vm["lambda"].defaulted()           ? vm["lambda"].as<double>()           : -1,
+	    !vm["lambdaderivative"].defaulted() ? vm["lambdaderivative"].as<double>() : -1,
+	    !vm["nu"].defaulted()               ? vm["nu"].as<double>()               : -1,
+	    !vm["nuderivative"].defaulted()     ? vm["nuderivative"].as<double>()     : -1,
+	    !vm["rho"].defaulted()              ? vm["rho"].as<double>()              : -1,
+	    !vm["rhoderivative"].defaulted()    ? vm["rhoderivative"].as<double>()    : -1,
+	    !vm["yota"].defaulted()             ? vm["yota"].as<double>()             : -1,
+	    !vm["yotaderivative"].defaulted()   ? vm["yotaderivative"].as<double>()   : -1,
+	    !vm["sigma"].defaulted()            ? vm["sigma"].as<double>()            : -1,
+	    !vm["sigmaderivative"].defaulted()  ? vm["sigmaderivative"].as<double>()  : -1
+	);
+
+	// Apply metric-specific sampling overrides
+	if (!vm["metric-sampling"].as<std::string>().empty())
+	{
+	    metricsConfig = MetricsConfig::ParseMainSampling(
+	        metricsConfig,
+	        vm["metric-sampling"].as<std::string>()
+	    );
+	}
+
+	// Print final configuration to user
+	std::cout << "\n[Metrics Configuration]" << std::endl;
+	metricsConfig.Print("  ");
+
+	// Handle label weights (separate from main metrics)
+	LabelWeightsParser::LabelWeights labelWeights;
+
+	std::string labelWeightsStr = vm["label-weights"].as<std::string>();
+	if (!labelWeightsStr.empty())
+	{
+	    labelWeights = LabelWeightsParser::ParseVector(labelWeightsStr);
+	    std::cout << "[Label Weights] Parsed vector from --label-weights" << std::endl;
+	}
+	else if (vm["labelkappa"].as<double>() > 1e-6 || vm["fixedlabelmap"].as<std::string>() != "N")
+	{
+	    labelWeights = LabelWeightsParser::ScalarLabelWeights(
+	        vm["labelkappa"].as<double>(),
+	        vm["labelkappaderiv"].as<double>()
+	    );
+	    
+	    // Auto-expand if labelmap is provided
+	    std::string fixedLabelMapPath = vm["fixedlabelmap"].as<std::string>();
+	    if (fixedLabelMapPath != "N" && !fixedLabelMapPath.empty())
+	    {
+	        unsigned int numLabels = LabelWeightsParser::DetectNumberOfLabels(fixedLabelMapPath);
+	        if (numLabels > 0)
+	        {
+	            labelWeights = LabelWeightsParser::ExpandToVector(labelWeights, numLabels);
+	        }
+	    }
+	}
+	else
+	{
+	    labelWeights = LabelWeightsParser::Disabled();
+	}
+
+	std::cout << "[Label Weights Configuration]" << std::endl;
+	labelWeights.Print("  ");
 
 	// ── Handle --help and --version BEFORE any file I/O ────────────────────────
 	if (vm.count("version")) {
@@ -415,22 +547,7 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 }
 
 	
-	transform->SetIdentity();
-	// allign the center of the images
-	typedef itk::CenteredTransformInitializer<
-			TransformType,
-			FixedImageType,
-			MovingImageType >  TransformInitializerType;
-
-	TransformInitializerType::Pointer initializer = TransformInitializerType::New();
-
-	initializer->SetTransform(   transform );
-	initializer->SetFixedImage(  fixedImage );
-	initializer->SetMovingImage( movingImage );
-	initializer->MomentsOn();
-	initializer->InitializeTransform();
-
-
+	// Transform will be initialized in the --transformin branch or the else branch below.
 
 	  using OptimizerScalesType = OptimizerType::ScalesType;
   OptimizerScalesType optimizerScales(
@@ -465,35 +582,18 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	const unsigned int numberOfParameters =
 			transform->GetNumberOfParameters();
 
-	ParametersType parametersLow( numberOfParameters );
-
-	parametersLow.Fill( 0.0 );
-
-	transform->SetParameters( parametersLow );
-
-
-	// itk::Point<double, 3> center;
-	// itk::Index<3> centerIndex;
-
-	// for (int i = 0; i < 3; ++i) {
-			// 	centerIndex[i] = sourceImage->GetLargestPossibleRegion().GetSize()[i] / 2;
-			// }
-			// sourceImage->TransformIndexToPhysicalPoint(centerIndex, center);
-			// transform->SetCenter(center);
-
-
-
-	registration->SetInitialTransformParameters( transform->GetParameters() );
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
-	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * MAPERCENTAGE);
+	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent);
 
 
 	// const unsigned int numberOfSamplesGD =
 	// 	static_cast<unsigned int>(numberOfPixels * GDPERCENTAGE);
 
-	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * NGFPERCENTAGE);
-	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * MSEPERCENTAGE);
-	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * NCPERCENTAGE);
+	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent);
+	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * metricsConfig.mse.samplingPercent);
+	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent);
+	const unsigned int numberOfSamplesGD  = static_cast<unsigned int>(numberOfPixels * metricsConfig.gd.samplingPercent);
+	const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * metricsConfig.nmi.samplingPercent);
 	const unsigned int numberOfSamplesLabel = RegCommon::ResolveLabelSampleCount(LABELSAMPLES, numberOfPixels);
 
 	metric->SetComputeOverlap(METRICOVERLAP);
@@ -503,8 +603,8 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	metric->SetDerivativeMode(DERIVMODE);
 	metric->SetMainMetricIndex(MAINMETRIC);
 
-	metric->SetAlpha(ALPHA);
-	metric->SetAlphaDerivative(ALPHADERIVATIVE);
+	metric->SetAlpha(metricsConfig.mi.weight);
+	metric->SetAlphaDerivative(metricsConfig.mi.derivative);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetBinNumbers(NB);
 	metric->SetFixedEta(ETAF);
@@ -512,27 +612,30 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	metric->SetEvaluator(NGFevaluator);
 
 
-	metric->SetLambda(LAMBDA);
-	metric->SetLambdaDerivative(LAMBDADERIVATIVE);
+	metric->SetLambda(metricsConfig.ngf.weight);
+	metric->SetLambdaDerivative(metricsConfig.ngf.derivative);
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetNGFSpacing(ngf);
 	metric->SetNGFPrecomputeGradient(vm["ngfprecompute"].as<bool>());
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
-	metric->SetNu(NU);
-	metric->SetNuDerivative(NUDERIVATIVE);
+	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
+	metric->SetNu(metricsConfig.mse.weight);
+	metric->SetNuDerivative(metricsConfig.mse.derivative);
 
 
-	metric->SetYota(YOTA);
-	metric->SetYotaDerivative(YOTADERIVATIVE);
+	metric->SetYota(metricsConfig.nc.weight);
+	metric->SetYotaDerivative(metricsConfig.nc.derivative);
 	metric->SetNCNumberOfSamples(numberOfSamplesNC);
 
-	metric->SetRho(RHO);
-	metric->SetRhoDerivative(RHODERIVATIVE);
+	metric->SetRho(metricsConfig.gd.weight);
+	metric->SetRhoDerivative(metricsConfig.gd.derivative);
+	metric->SetGDNumberOfSamples(numberOfSamplesGD);
 
-	metric->SetSigma(SIGMA);
-	metric->SetSigmaDerivative(SIGMADERIVATIVE);
+	metric->SetSigma(metricsConfig.nmi.weight);
+	metric->SetSigmaDerivative(metricsConfig.nmi.derivative);
 	metric->SetNMIBinNumbers(NMIBINS);
+	metric->SetNMINumberOfSamples(numberOfSamplesNMI);
 
 	if (TR!=-99999999)
 	{
@@ -542,8 +645,8 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 	if (fixedLabelMap && movingLabelMap) {
 		metric->SetFixedLabelMap(fixedLabelMap);
 		metric->SetMovingLabelMap(movingLabelMap);
-		metric->SetLabelKappa(LABELKAPPA);
-		metric->SetLabelKappaDerivative(LABELKAPPADERIV);
+		metric->SetLabelKappa(labelWeights.IsEnabled() ? labelWeights.GetScalarKappa() : LABELKAPPA);
+		metric->SetLabelKappaDerivative(labelWeights.IsEnabled() ? labelWeights.GetScalarDerivative() : LABELKAPPADERIV);
 		metric->SetLabelNumberOfSamples(numberOfSamplesLabel);
 		metric->SetLabelDistanceMax(LABELDISTMAX);
 		metric->SetLabelUseNarrowBand(LABELNARROWBAND);
@@ -560,9 +663,15 @@ if ((LAMBDA!=0) || (LAMBDADERIVATIVE!=0))
 		TransformReaderType::Pointer transformReader = TransformReaderType::New();
 		transformReader->SetFileName( TIN );
 		transformReader->Update();
-		transform=dynamic_cast<TransformType*>(transformReader->GetTransformList()->front().GetPointer());
-
-		
+		transform = dynamic_cast<TransformType*>(
+			transformReader->GetTransformList()->front().GetPointer());
+		if (!transform)
+		{
+			std::cerr << "Error: Transform file '" << TIN
+			          << "' is not a Similarity3DTransform.\n"
+			             "       Only Similarity3DTransform files are supported by --transformin.\n";
+			return EXIT_FAILURE;
+		}
 	}else
 	{
 		transform->SetIdentity();
