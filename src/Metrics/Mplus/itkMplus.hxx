@@ -95,6 +95,9 @@ namespace itk
 
 		m_NormalizeMSE = false;
 		m_MSEIntensityRangeSquared = 1.0;
+		m_NormalizeGD = false;
+		m_GDNormalizationFactor = 1.0;
+		m_NCDegenerate = false;
 
 		// per-sub-metric cached values
 		m_LastValMI    = 0.0;
@@ -288,30 +291,86 @@ namespace itk
 				m_NC->SetFixedImageSamplesIntensityThreshold(this->m_FixedImageThreshold);
 			m_NC->Initialize();
 
+			// Safety: NC divides by moving-image std-dev.  If the moving image is
+			// constant (e.g. pre-warped background) the denominator is zero and the
+			// derivative buffer fills with NaN → access violation.  Check variance
+			// over 5% of voxels and auto-disable if the image is flat.
+			{
+				constexpr double kMinStd = 1e-6;
+				constexpr double kSampleFrac = 0.05;
+				const unsigned long totalPix = this->m_MovingImage->GetLargestPossibleRegion().GetNumberOfPixels();
+				const size_t maxSamp = std::max(static_cast<size_t>(5000),
+				                                static_cast<size_t>(totalPix * kSampleFrac));
+				double sum = 0.0, sum2 = 0.0;
+				size_t cnt = 0;
+				itk::ImageRegionConstIterator<MovingImageType> it(
+					this->m_MovingImage, this->m_MovingImage->GetLargestPossibleRegion());
+				for (; !it.IsAtEnd() && cnt < maxSamp; ++it, ++cnt)
+				{
+					double v = static_cast<double>(it.Get());
+					sum  += v;
+					sum2 += v * v;
+				}
+				double mean = sum / cnt;
+				double var  = sum2 / cnt - mean * mean;
+				if (std::sqrt(var) < kMinStd)
+				{
+					std::cout << "  [SAFETY] NC: moving image is constant (std="
+					          << std::scientific << std::setprecision(2)
+					          << std::sqrt(var) << std::defaultfloat
+					          << ") — auto-disabling NC to prevent division-by-zero crash." << std::endl;
+					this->m_NCDegenerate = true;
+				}
+			}
 		}
 
 		// ── Gradient Difference (GD) ──────────────────────────────────────────
+		// NOTE: GD's Initialize() calls a ResampleImageFilter that calls
+		// SetInputImage() on the interpolator, leaving it in a modified state.
+		// Give GD its own private interpolator clone to avoid corrupting the
+		// shared interpolator used by MA, NGF, MSE, and NC.
 		if (this->m_Rho != 0.0 || this->m_RhoDerivative != 0.0)
 		{
+			typename InterpolatorType::Pointer gdInterp =
+				dynamic_cast<InterpolatorType*>(this->GetInterpolator()->CreateAnother().GetPointer());
+			if (!gdInterp) gdInterp = this->GetInterpolator();
 			m_GD = GDType::New();
 			m_GD->SetFixedImage(this->GetFixedImage());
 			m_GD->SetMovingImage(this->GetMovingImage());
 			m_GD->SetTransform(this->GetTransform());
-			m_GD->SetInterpolator(this->GetInterpolator());
+			m_GD->SetInterpolator(gdInterp);
 			m_GD->SetFixedImageRegion(overlap);
 			m_GD->SetDerivativeDelta(0.001);
+			m_GD->SetNumberOfThreads(this->GetNumberOfThreads());
+			m_GD->SetUseCachingOfBSplineWeights(false);
 			m_GD->Initialize();
+
+			// Cache 1/N_overlap_voxels for NormalizeGD.  GD iterates the full
+			// fixed-image (overlap) region and accumulates per-voxel terms in
+			// [0,1], so dividing by the voxel count converts the sum into a
+			// mean comparable in magnitude to MI/NGF/NC.
+			if (this->m_NormalizeGD)
+			{
+				const double n = static_cast<double>(overlap.GetNumberOfPixels());
+				m_GDNormalizationFactor = (n > 0.0) ? (1.0 / n) : 1.0;
+			}
 		}
 
 		// ── Normalized Mutual Information (NMI) ──────────────────────────────
+		// Give NMI its own interpolator clone for the same reason as GD above.
 		if (this->m_Sigma != 0.0 || this->m_SigmaDerivative != 0.0)
 		{
+			typename InterpolatorType::Pointer nmiInterp =
+				dynamic_cast<InterpolatorType*>(this->GetInterpolator()->CreateAnother().GetPointer());
+			if (!nmiInterp) nmiInterp = this->GetInterpolator();
 			m_NMI = NMIType::New();
 			m_NMI->SetFixedImage(this->GetFixedImage());
 			m_NMI->SetMovingImage(this->GetMovingImage());
 			m_NMI->SetTransform(this->GetTransform());
-			m_NMI->SetInterpolator(this->GetInterpolator());
+			m_NMI->SetInterpolator(nmiInterp);
 			m_NMI->SetFixedImageRegion(overlap);
+			m_NMI->SetNumberOfThreads(this->GetNumberOfThreads());
+			m_NMI->SetUseCachingOfBSplineWeights(false);
 			// Histogram size: [bins_fixed, bins_moving]
 			typename NMIType::HistogramType::SizeType histSize(2);
 			histSize.Fill(static_cast<typename NMIType::HistogramType::SizeType::ValueType>(this->m_NMIBinNumbers));
@@ -326,69 +385,156 @@ namespace itk
 			{
 				std::cout << "Auto-estimating η for NGF metric..." << std::endl;
 				constexpr double kMinEta = 1e-8;
-				constexpr double percentile = 0.10;
-				constexpr double sampleFraction = 0.05; // sample ~5% of voxels
+				// Foreground-aware estimator:
+				//   1) determine a foreground intensity threshold from the
+				//      intensity range (5% above the min);
+				//   2) restrict the gradient-magnitude population to voxels
+				//      whose intensity is above that threshold;
+				//   3) use the MEDIAN of those gradients as η (robust to
+				//      outliers and to large background regions caused by
+				//      pre-warping / FOV mismatch).
+				constexpr double kPercentile      = 0.50;
+				constexpr double kFgIntensityFrac = 0.05;
+				constexpr double kSampleFraction  = 0.05;
 
-				// Fixed image eta
+				bool etaMAtFloor = false;
+
+				// ── Fixed image η ──────────────────────────────────────────
 				{
 					using GradFilterType = itk::GradientMagnitudeImageFilter<FixedImageType, FixedImageType>;
 					typename GradFilterType::Pointer gradFilter = GradFilterType::New();
 					gradFilter->SetInput(this->m_FixedImage);
 					gradFilter->Update();
 
-					const unsigned long totalPixF = this->m_FixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
-					const size_t maxSamplesF = std::max(static_cast<size_t>(10000),
-					                                    static_cast<size_t>(totalPixF * sampleFraction));
+					const unsigned long totalPix = this->m_FixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
+					const size_t maxSamples = std::max(static_cast<size_t>(20000),
+					                                   static_cast<size_t>(totalPix * kSampleFraction));
+
+					double minVal =  std::numeric_limits<double>::max();
+					double maxVal = -std::numeric_limits<double>::max();
+					{
+						itk::ImageRegionConstIterator<FixedImageType> it(
+							this->m_FixedImage, this->m_FixedImage->GetLargestPossibleRegion());
+						size_t cnt = 0;
+						for (; !it.IsAtEnd() && cnt < maxSamples; ++it, ++cnt)
+						{
+							double v = static_cast<double>(it.Get());
+							if (v < minVal) minVal = v;
+							if (v > maxVal) maxVal = v;
+						}
+					}
+					const double range = maxVal - minVal;
+					const double fgThreshold = (range > 0.0)
+					    ? (minVal + kFgIntensityFrac * range) : minVal;
+
 					std::vector<double> mags;
-					mags.reserve(maxSamplesF);
-					itk::ImageRegionConstIterator<FixedImageType> it(
-						gradFilter->GetOutput(),
-						gradFilter->GetOutput()->GetLargestPossibleRegion());
-					for (; !it.IsAtEnd() && mags.size() < maxSamplesF; ++it)
-						mags.push_back(it.Get());
-					std::sort(mags.begin(), mags.end());
-					double etaF = mags[static_cast<size_t>(percentile * mags.size())];
-					bool etaFAtFloor = false;
-					if (etaF < kMinEta) { etaF = kMinEta; etaFAtFloor = true; }
+					mags.reserve(maxSamples);
+					{
+						itk::ImageRegionConstIterator<FixedImageType> itImg(
+							this->m_FixedImage, this->m_FixedImage->GetLargestPossibleRegion());
+						itk::ImageRegionConstIterator<FixedImageType> itGrad(
+							gradFilter->GetOutput(),
+							gradFilter->GetOutput()->GetLargestPossibleRegion());
+						size_t cnt = 0;
+						for (; !itImg.IsAtEnd() && mags.size() < maxSamples;
+						     ++itImg, ++itGrad, ++cnt)
+						{
+							if (static_cast<double>(itImg.Get()) > fgThreshold)
+								mags.push_back(static_cast<double>(itGrad.Get()));
+						}
+					}
+
+					double etaF;
+					bool atFloor = false;
+					if (mags.empty()) { etaF = kMinEta; atFloor = true; }
+					else
+					{
+						std::sort(mags.begin(), mags.end());
+						etaF = mags[static_cast<size_t>(kPercentile * mags.size())];
+						if (etaF < kMinEta) { etaF = kMinEta; atFloor = true; }
+					}
 					this->SetFixedEta(etaF);
-					std::cout << "  Fixed η: " << std::scientific << std::setprecision(6) << etaF
-					          << std::defaultfloat << (etaFAtFloor ? " [WARNING: clamped to floor — degenerate fixed-image gradient]" : "")
+					std::cout << "  Fixed  η: "
+					          << std::scientific << std::setprecision(6) << etaF
+					          << std::defaultfloat
+					          << "   (fg voxels: " << mags.size() << "/" << maxSamples
+					          << ", range [" << minVal << ", " << maxVal
+					          << "], fg thr " << fgThreshold << ")"
+					          << (atFloor ? " [WARNING: floor — degenerate fixed image]" : "")
 					          << std::endl;
 				}
 
-				// Moving image eta (computed independently)
+				// ── Moving image η ─────────────────────────────────────────
 				{
 					using GradFilterType = itk::GradientMagnitudeImageFilter<MovingImageType, MovingImageType>;
 					typename GradFilterType::Pointer gradFilter = GradFilterType::New();
 					gradFilter->SetInput(this->m_MovingImage);
 					gradFilter->Update();
 
-					const unsigned long totalPixM = this->m_MovingImage->GetLargestPossibleRegion().GetNumberOfPixels();
-					const size_t maxSamplesM = std::max(static_cast<size_t>(10000),
-					                                    static_cast<size_t>(totalPixM * sampleFraction));
-					std::vector<double> mags;
-					mags.reserve(maxSamplesM);
-					itk::ImageRegionConstIterator<MovingImageType> it(
-						gradFilter->GetOutput(),
-						gradFilter->GetOutput()->GetLargestPossibleRegion());
-					for (; !it.IsAtEnd() && mags.size() < maxSamplesM; ++it)
-						mags.push_back(it.Get());
-					std::sort(mags.begin(), mags.end());
-					double etaM = mags[static_cast<size_t>(percentile * mags.size())];
-					bool etaMAtFloor = false;
-					if (etaM < kMinEta) { etaM = kMinEta; etaMAtFloor = true; }
-					this->SetMovingEta(etaM);
-					std::cout << "  Moving η: " << std::scientific << std::setprecision(6) << etaM
-					          << std::defaultfloat << (etaMAtFloor ? " [WARNING: clamped to floor — degenerate moving-image gradient]" : "")
-					          << std::endl;
-					// Safety: precomputing the moving NGF with a degenerate η produces
-					// huge ratios in the gradient buffer that lead to NaN/Inf and
-					// access violations on the first GetDerivative call.  Auto-disable.
-					if (etaMAtFloor && this->m_NGFPrecomputeGradient)
+					const unsigned long totalPix = this->m_MovingImage->GetLargestPossibleRegion().GetNumberOfPixels();
+					const size_t maxSamples = std::max(static_cast<size_t>(20000),
+					                                   static_cast<size_t>(totalPix * kSampleFraction));
+
+					double minVal =  std::numeric_limits<double>::max();
+					double maxVal = -std::numeric_limits<double>::max();
 					{
-						std::cout << "  [SAFETY] Auto-disabling --ngfprecompute because moving η is at floor." << std::endl;
-						this->m_NGFPrecomputeGradient = false;
+						itk::ImageRegionConstIterator<MovingImageType> it(
+							this->m_MovingImage, this->m_MovingImage->GetLargestPossibleRegion());
+						size_t cnt = 0;
+						for (; !it.IsAtEnd() && cnt < maxSamples; ++it, ++cnt)
+						{
+							double v = static_cast<double>(it.Get());
+							if (v < minVal) minVal = v;
+							if (v > maxVal) maxVal = v;
+						}
 					}
+					const double range = maxVal - minVal;
+					const double fgThreshold = (range > 0.0)
+					    ? (minVal + kFgIntensityFrac * range) : minVal;
+
+					std::vector<double> mags;
+					mags.reserve(maxSamples);
+					{
+						itk::ImageRegionConstIterator<MovingImageType> itImg(
+							this->m_MovingImage, this->m_MovingImage->GetLargestPossibleRegion());
+						itk::ImageRegionConstIterator<MovingImageType> itGrad(
+							gradFilter->GetOutput(),
+							gradFilter->GetOutput()->GetLargestPossibleRegion());
+						size_t cnt = 0;
+						for (; !itImg.IsAtEnd() && mags.size() < maxSamples;
+						     ++itImg, ++itGrad, ++cnt)
+						{
+							if (static_cast<double>(itImg.Get()) > fgThreshold)
+								mags.push_back(static_cast<double>(itGrad.Get()));
+						}
+					}
+
+					double etaM;
+					if (mags.empty()) { etaM = kMinEta; etaMAtFloor = true; }
+					else
+					{
+						std::sort(mags.begin(), mags.end());
+						etaM = mags[static_cast<size_t>(kPercentile * mags.size())];
+						if (etaM < kMinEta) { etaM = kMinEta; etaMAtFloor = true; }
+					}
+					this->SetMovingEta(etaM);
+					std::cout << "  Moving η: "
+					          << std::scientific << std::setprecision(6) << etaM
+					          << std::defaultfloat
+					          << "   (fg voxels: " << mags.size() << "/" << maxSamples
+					          << ", range [" << minVal << ", " << maxVal
+					          << "], fg thr " << fgThreshold << ")"
+					          << (etaMAtFloor ? " [WARNING: floor — degenerate moving image]" : "")
+					          << std::endl;
+				}
+
+				// Safety: precomputing the moving NGF with a degenerate η produces
+				// huge ratios in the gradient buffer that lead to NaN/Inf and
+				// access violations on the first GetDerivative call.  Auto-disable.
+				if (etaMAtFloor && this->m_NGFPrecomputeGradient)
+				{
+					std::cout << "  [SAFETY] Auto-disabling --ngfprecompute because moving η is at floor." << std::endl;
+					this->m_NGFPrecomputeGradient = false;
 				}
 			}
 
@@ -578,7 +724,7 @@ namespace itk
 			d = this->GetGDValue(parameters);
 
 		e = 0.0;
-		if (this->m_Yota != 0.0)
+		if (this->m_Yota != 0.0 && !this->m_NCDegenerate)
 			e = this->GetNCValue(parameters);
 
 		double f = 0.0;
@@ -659,7 +805,10 @@ namespace itk
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	Mplus<TFixedImage, TMovingImage>::GetGDValue(const ParametersType &parameters) const
 	{
-		return static_cast<MeasureType>(m_GD->GetValue(parameters) * this->m_Rho);
+		double raw = m_GD->GetValue(parameters);
+		if (this->m_NormalizeGD)
+			raw *= this->m_GDNormalizationFactor;
+		return static_cast<MeasureType>(raw * this->m_Rho);
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -732,7 +881,7 @@ namespace itk
 
 		DerivativeType e;
 		e = parameters;
-		if (this->m_YotaDerivative != 0.0)
+		if (this->m_YotaDerivative != 0.0 && !this->m_NCDegenerate)
 			this->GetNCDerivative(parameters, e);
 		else
 			e.Fill(0.0);
@@ -746,8 +895,22 @@ namespace itk
 
 		DerivativeType g;
 		g = parameters;
+		// NMI derivative: see GetValueAndDerivative — finite-difference NMI
+		// derivative is infeasible and unstable for B-spline transforms.
+		// Skip with a one-shot warning so NMI contributes value-only.
 		if (this->m_SigmaDerivative != 0.0)
-			this->GetNMIDerivative(parameters, g);
+		{
+			static bool warned = false;
+			if (!warned)
+			{
+				std::cout << "[Mplus] WARNING: NMI derivative requested but skipped "
+				             "(finite-difference NMI derivative is infeasible and "
+				             "unstable for B-spline transforms; NMI contributes to "
+				             "the value only)." << std::endl;
+				warned = true;
+			}
+			g.Fill(0.0);
+		}
 		else
 			g.Fill(0.0);
 
@@ -971,6 +1134,12 @@ namespace itk
 	Mplus<TFixedImage, TMovingImage>::GetGDDerivative(const ParametersType &parameters, DerivativeType &derivative) const
 	{
 		m_GD->GetDerivative(parameters, derivative);
+		if (this->m_NormalizeGD)
+		{
+			const double f = this->m_GDNormalizationFactor;
+			for (unsigned int i = 0; i < derivative.size(); ++i)
+				derivative[i] *= f;
+		}
 	}
 
 	template <class TFixedImage, class TMovingImage>
@@ -1055,20 +1224,37 @@ namespace itk
 		}
 
 		// GD (Gradient Difference)
-		if (this->m_Rho != 0.0 && this->m_RhoDerivative != 0.0)
-			m_GD->GetValueAndDerivative(parameters, rawValD, rawDerD);
-		else if (this->m_Rho != 0.0)
+		// NOTE: GradientDifferenceImageToImageMetric does not override
+		// GetValueAndDerivative - the base-class default uses threaded sampling
+		// with pre-allocated BSpline weight arrays sized for the metric's own
+		// thread count.  Calling GetValueAndDerivative can crash if that count
+		// differs from the registration thread count.  Use separate GetValue +
+		// GetDerivative calls instead (GD::GetDerivative uses finite differences
+		// so it already calls GetValue internally and is always safe).
+		if (this->m_Rho != 0.0)
 			rawValD = m_GD->GetValue(parameters);
-		else if (this->m_RhoDerivative != 0.0)
+		if (this->m_RhoDerivative != 0.0)
 			m_GD->GetDerivative(parameters, rawDerD);
+		// Apply GD normalisation: divide both value and derivative by overlap
+		// voxel count so GD becomes a mean in [0,1] (comparable to MI/NGF/NC).
+		if (this->m_NormalizeGD)
+		{
+			const double f = this->m_GDNormalizationFactor;
+			rawValD *= f;
+			for (unsigned int i = 0; i < nParams; ++i)
+				rawDerD[i] *= f;
+		}
 
 		// NC
-		if (this->m_Yota != 0.0 && this->m_YotaDerivative != 0.0)
-			m_NC->GetValueAndDerivative(parameters, rawValE, rawDerE);
-		else if (this->m_Yota != 0.0)
-			rawValE = m_NC->GetValue(parameters);
-		else if (this->m_YotaDerivative != 0.0)
-			m_NC->GetDerivative(parameters, rawDerE);
+		if (!this->m_NCDegenerate)
+		{
+			if (this->m_Yota != 0.0 && this->m_YotaDerivative != 0.0)
+				m_NC->GetValueAndDerivative(parameters, rawValE, rawDerE);
+			else if (this->m_Yota != 0.0)
+				rawValE = m_NC->GetValue(parameters);
+			else if (this->m_YotaDerivative != 0.0)
+				m_NC->GetDerivative(parameters, rawDerE);
+		}
 
 		// Kappa (label metric)
 		if ((this->m_LabelKappa != 0.0 || this->m_LabelKappaDerivative != 0.0)
@@ -1083,13 +1269,33 @@ namespace itk
 				this->GetKappaDerivative(parameters, rawDerF);
 		}
 
-		// NMI (Normalized Mutual Information)
-		if (this->m_Sigma != 0.0 && this->m_SigmaDerivative != 0.0)
-			m_NMI->GetValueAndDerivative(parameters, rawValG, rawDerG);
-		else if (this->m_Sigma != 0.0)
+		// NMI (Normalized Mutual Information).
+		//
+		// HistogramImageToImageMetric::GetDerivative uses central finite
+		// differences: for each of N parameters it perturbs the SHARED transform,
+		// recomputes the full histogram, and restores the parameters.  For a
+		// B-spline transform with thousands of parameters this is both
+		// computationally infeasible (hours per evaluation) and crash-prone
+		// because the shared-transform parameter perturbations corrupt state
+		// observed by the other (multi-threaded) sub-metrics on the next call.
+		// We therefore evaluate NMI as a VALUE-ONLY term in B-spline mode and
+		// leave its derivative contribution at zero, even when SigmaDerivative
+		// is set.  A one-shot warning is emitted so users know.
+		if (this->m_Sigma != 0.0)
 			rawValG = m_NMI->GetValue(parameters);
-		else if (this->m_SigmaDerivative != 0.0)
-			m_NMI->GetDerivative(parameters, rawDerG);
+		if (this->m_SigmaDerivative != 0.0)
+		{
+			static bool warned = false;
+			if (!warned)
+			{
+				std::cout << "[Mplus] WARNING: NMI derivative requested but skipped "
+				             "(finite-difference NMI derivative is infeasible and "
+				             "unstable for B-spline transforms; NMI contributes to "
+				             "the value only)." << std::endl;
+				warned = true;
+			}
+			rawDerG.Fill(0.0);
+		}
 
 		// ── Cache weighted per-sub-metric contributions ───────────────────
 		this->m_LastValMI    = this->m_Alpha  * rawValA;

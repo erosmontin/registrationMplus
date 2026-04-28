@@ -206,7 +206,8 @@ for (unsigned i = 0; i < ImageDimension; ++i)
 ```cpp
 // Lines: 120-128
 --msepercentage         Default: 0.1   → Use 10% of pixels for MSE
---normalizemse          Default: false → Normalize by intensity range
+--normalizemse          Default: false → Normalize MSE by intensity range (mean in [0,1])
+--normalizegd           Default: false → Normalize GD by overlap voxel count (mean in [0,1])
 --gdpercentage          Default: 0.1   → Use 10% of pixels for GD
 --ncpercentage          Default: 0.1   → Use 10% of pixels for NC
 --nmipercentage         Default: 0.1   → Use 10% of pixels for NMI
@@ -503,6 +504,7 @@ else if (MODALITY == "singlemodal") {
 | | nmipercentage | double | 0.1 | 124 |
 | | nmibins | int | 64 | 151 |
 | | normalizemse | bool | false | 122 |
+| | normalizegd | bool | false | 127 |
 | **Optimization** | gridresolution | double | 50 | 102 |
 | | maxnumberofiterations | int | 1000 | 103 |
 | | costfunctionconvergencefactor | double | **1.e7** ⭐ | 104 |

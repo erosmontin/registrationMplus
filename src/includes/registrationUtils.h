@@ -1482,6 +1482,12 @@ public:
             // This avoids upsampling already-coarse working data.
             typename TImage::ConstPointer movSrc =
                 m_OriginalMovingImage ? m_OriginalMovingImage : m_MovingImage;
+            // Track whether movSrc is rooted in the *original* (un-pre-warped)
+            // moving image.  When true and an initial linear transform exists,
+            // every resampling of movSrc must compose `initial ∘ m_Transform`,
+            // because m_Transform alone maps fixed -> pre-warped-moving.  This
+            // is independent of `useOriginals`, which only governs resolution.
+            const bool movSrcIsOriginal = (m_OriginalMovingImage.IsNotNull());
             typename TImage::ConstPointer fixSrc =
                 m_OriginalFixedImage ? m_OriginalFixedImage : m_FixedImage;
 
@@ -1526,23 +1532,15 @@ public:
                 }
             }
 
-            // Pre-resample original moving image to working resolution for coordinate consistency
-            if (useOriginals && (movSrc == m_OriginalMovingImage))
-            {
-                using Resample = itk::ResampleImageFilter<TImage, TImage>;
-                auto rsMovToWorking = Resample::New();
-                rsMovToWorking->SetInput(movSrc);
-                rsMovToWorking->SetTransform(itk::IdentityTransform<double, Dim>::New());
-                rsMovToWorking->SetSize(fixSize0);
-                rsMovToWorking->SetOutputSpacing(fixSpD0);
-                rsMovToWorking->SetOutputOrigin(m_FixedImage->GetOrigin());
-                rsMovToWorking->SetOutputDirection(m_FixedImage->GetDirection());
-                rsMovToWorking->SetDefaultPixelValue(0);
-                rsMovToWorking->Update();
-                typename TImage::Pointer movStaged = rsMovToWorking->GetOutput();
-                movStaged->DisconnectPipeline();
-                movSrc = const_cast<const TImage*>(movStaged.GetPointer());
-            }
+            // NOTE: do NOT pre-stage the original moving image with an
+            // identity transform.  m_OriginalMovingImage lives in its OWN
+            // physical frame (not the fixed frame), so an identity resample
+            // onto the fixed grid samples mostly outside the moving extent
+            // and fills with defaultPixelValue → the staged image is mostly
+            // zero and snapshots render as solid gray.  The next resample
+            // (below) already maps movSrc → output grid using the correct
+            // composite transform (initial ∘ m_Transform), which is the only
+            // resampling needed for the moving image.
 
             // Resample the moving image with the current transform
             using Resample = itk::ResampleImageFilter<TImage, TImage>;
@@ -1555,7 +1553,7 @@ public:
             // then the initial linear transform.  ITK CompositeTransform
             // applies transforms in REVERSE add order (last added applied
             // first to the point), so add the initial transform LAST.
-            if (useOriginals && m_InitialMovingTransform.IsNotNull())
+            if (movSrcIsOriginal && m_InitialMovingTransform.IsNotNull())
             {
                 using Composite = itk::CompositeTransform<double, Dim>;
                 auto comp = Composite::New();
@@ -1761,7 +1759,7 @@ public:
                     using ResampleGrid = itk::ResampleImageFilter<TImage, TImage>;
                     auto rsg = ResampleGrid::New();
                     rsg->SetInput(gridImg);
-                    if (useOriginals && m_InitialMovingTransform.IsNotNull())
+                    if (movSrcIsOriginal && m_InitialMovingTransform.IsNotNull())
                     {
                         // Same composition as for the moving image so the
                         // grid lines bend in the same coordinate space.

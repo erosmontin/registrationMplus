@@ -111,6 +111,7 @@ int main( int argc, char *argv[] )
         ("numberoflevels,U", po::value<int>(&NL)->default_value(2), "Number of levels")
 		("msepercentage",   po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
 		("normalizemse",    po::value<bool>()->default_value(false), "Normalize MSE by intensity-range^2 to keep it comparable to MI/NGF/NC (default false)")
+		("normalizegd",     po::value<bool>()->default_value(false), "Normalize GD by overlap voxel count (mean instead of sum) so it is comparable to MI/NGF/NC (default false)")
 		("ngfpercentage",   po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
 		("gdpercentage",    po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
 		("nmipercentage",   po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
@@ -634,6 +635,7 @@ if (method == "translation") {
 	metric->SetAlphaDerivative(metricsConfig.mi.derivative);
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
+	metric->SetNormalizeGD(vm["normalizegd"].as<bool>());
 	metric->SetBinNumbers(NB);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
 	metric->SetUseExplicitPDFDerivatives(EPDF);

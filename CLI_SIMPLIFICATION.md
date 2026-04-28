@@ -91,6 +91,7 @@ These parameters remain available but are **optional and rarely needed**:
 --derivativemode 0          # 0=consistent (default), 1=normalized, 2=adaptive
 --mainmetric 0              # For mode 2: which metric drives scaling
 --normalizemse true         # Keep MSE in [0,1] range
+--normalizegd true          # Keep GD in [0,1] range (mean instead of sum)
 --ngfprecompute false       # Speed optimization
 --fixedimagethreshold -1    # Focus on ROI only
 --verbose true              # Debug output

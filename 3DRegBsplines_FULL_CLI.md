@@ -77,6 +77,7 @@
   # ═══════════════════════════════════════════════════════════════
   --msepercentage 0.1 \            # Use 10% of pixels for MSE
   --normalizemse false \           # Normalize by intensity range (usually off)
+  --normalizegd false \            # Normalize GD by overlap voxel count (usually off)
   \
   # ═══════════════════════════════════════════════════════════════
   # GRADIENT DIFFERENCE (GD)

@@ -142,6 +142,17 @@ public:
 	itkSetMacro( NormalizeMSE, bool);
 	itkBooleanMacro( NormalizeMSE);
 
+	/** When true, the raw GD value/derivative is divided by the number of
+	 *  voxels in the overlap region before applying the Rho weight.  GD is a
+	 *  sum of per-voxel terms in [0,1], so the raw value scales with overlap
+	 *  size and is typically orders of magnitude larger than MI/NGF/NC.
+	 *  Normalising turns it into a mean in [0,1] so Rho is portable across
+	 *  sample/overlap sizes and comparable to the other sub-metrics.
+	 *  Default: false. */
+	itkGetMacro( NormalizeGD, bool);
+	itkSetMacro( NormalizeGD, bool);
+	itkBooleanMacro( NormalizeGD);
+
 	itkGetMacro( Yota, double);
 	itkSetMacro( Yota, double);
 
@@ -384,6 +395,8 @@ protected:
 	bool m_UseExplicitPDFDerivatives;
 	bool m_NormalizeMSE;              // divide raw MSE by intensity-range^2 before Nu weighting
 	double m_MSEIntensityRangeSquared; // cached (range^2), computed once in Initialize()
+	bool m_NormalizeGD;               // divide raw GD by overlap-voxel-count before Rho weighting
+	double m_GDNormalizationFactor;   // cached 1/N_overlap_voxels, computed in Initialize()
 	int  m_DerivativeMode;     // 0=consistent, 1=normalized, 2=main-metric
 	int  m_MainMetricIndex;    // 0=MI,1=NGF,2=MSE,3=NC,4=Label,5=GD,6=NMI
 	bool   m_AutoEstimateEta;
@@ -488,6 +501,7 @@ private:
 	typename NGFType::Pointer m_NGF;
 	typename MSEType::Pointer m_MSE;
 	typename NCType::Pointer m_NC;
+	mutable bool             m_NCDegenerate;   // true = moving image is constant → skip NC
 	typename GDType::Pointer m_GD;
 	typename NMIType::Pointer m_NMI;
 

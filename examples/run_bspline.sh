@@ -68,6 +68,7 @@ while IFS= read -r G; do
       -I 1000 \
       -F 1e7 \
       --normalizemse 1 \
+      --normalizegd 1 \
       --ngfprecompute 1 \
       --ngfspacing "4,4,4" \
       \

@@ -187,6 +187,7 @@ For a brain with 3 structures:
 --nu <val>                   MSE weight (default 1.0)
 --nuderivative <val>         MSE derivative weight (default 1.0)
 --normalizemse {true|false}  Normalize MSE by intensity^2 (default false)
+--normalizegd {true|false}   Normalize GD by overlap voxel count (default false)
 --rho <val>                  GD weight (default 0)
 --rhoderivative <val>        GD derivative weight (default 0)
 --yota <val>                 NC weight (default 0)
@@ -223,6 +224,7 @@ For a brain with 3 structures:
 --verbose {true|false}     Verbose output (default false)
 --derivativemode {0|1|2}   0=consistent, 1=normalized, 2=adaptive (default 0)
 --normalizemse {true|false} Normalize MSE to [0,1] (default false)
+--normalizegd {true|false}  Normalize GD to ~[0,1] (default false)
 ```
 
 ---
@@ -380,6 +382,14 @@ A: MSE can dominate other metrics if intensity ranges are large. Normalize divid
 
 ```bash
 --normalizemse true   # Recommended if blending MSE with MI/NGF
+```
+
+**Q: Why does `--normalizegd` exist?**
+
+A: Gradient Difference (GD) is a sum of per-voxel terms in [0,1], so its raw value scales with the overlap region size and is typically orders of magnitude larger than MI/NGF/NC. `--normalizegd 1` divides the value and derivative by the number of overlap voxels (cached once in `Initialize()`), turning the sum into a mean in [0,1] before `Rho` is applied. This makes `Rho` portable across sample/overlap sizes and comparable to the other sub-metrics.
+
+```bash
+--normalizegd true    # Recommended if blending GD with MI/NGF/MSE
 ```
 
 ---

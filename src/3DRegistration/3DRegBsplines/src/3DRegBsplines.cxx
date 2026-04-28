@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
 	("ngfpercentage", po::value<double>()->default_value(0.1), "NGF percentage of pixels used (0.1 = 10%)")
 	("msepercentage", po::value<double>()->default_value(0.1), "MSE percentage of pixels used (0.1 = 10%)")
 	("normalizemse",  po::value<bool>()->default_value(false), "Normalize MSE by intensity-range^2 to keep it comparable to MI/NGF/NC (default false)")
+	("normalizegd",   po::value<bool>()->default_value(false), "Normalize GD by overlap voxel count (mean instead of sum) so it is comparable to MI/NGF/NC (default false)")
 	("gdpercentage",   po::value<double>()->default_value(0.1), "GD percentage of pixels used (0.1 = 10%)")
 	("nmipercentage",  po::value<double>()->default_value(0.1), "NMI percentage of pixels used (0.1 = 10%)")
 	("ncpercentage", po::value<double>()->default_value(0.1), "NC percentage of pixels used (0.1 = 10%)")
@@ -773,12 +774,29 @@ int main(int argc, char *argv[])
 
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 
-	const unsigned int numberOfSamplesMA = static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent);
-	// const unsigned int numberOfSamplesCH =static_cast<unsigned int>(numberOfPixels * CHPERCENTAGE);
-	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent);
+	// Convert sampling fractions to absolute sample counts.
+	// Hard-cap MA/NGF/NC to prevent OOM: with BSpline weight caching each metric
+	// allocates nSamples × 64 × 8 bytes.  At 200k samples that is ~100 MB each —
+	// safe even on 4 GB GPUs.  MSE/GD/NMI do not use the weight cache.
+	constexpr unsigned int kMaxSamplesMA  = 200000;
+	constexpr unsigned int kMaxSamplesNGF = 100000;
+	constexpr unsigned int kMaxSamplesNC  = 100000;
+	const unsigned int numberOfSamplesMA = std::min(
+	    kMaxSamplesMA,
+	    static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent));
+	const unsigned int numberOfSamplesNGF = std::min(
+	    kMaxSamplesNGF,
+	    static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent));
 	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * metricsConfig.mse.samplingPercent);
-	const unsigned int numberOfSamplesNC = static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent);
+	const unsigned int numberOfSamplesNC = std::min(
+	    kMaxSamplesNC,
+	    static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent));
 	const unsigned int numberOfSamplesLabel = RegCommon::ResolveLabelSampleCount(LABELSAMPLES, numberOfPixels);
+	std::cout << "[Samples] MA=" << numberOfSamplesMA
+	          << " NGF=" << numberOfSamplesNGF
+	          << " NC=" << numberOfSamplesNC
+	          << " Label=" << numberOfSamplesLabel
+	          << "  (fixed image voxels=" << numberOfPixels << ")" << std::endl;
 
 	metric->SetUseCachingOfBSplineWeights(TB);
 	metric->SetUseExplicitPDFDerivatives(EPDF);
@@ -804,6 +822,7 @@ int main(int argc, char *argv[])
 
 	metric->SetMSENumberOfSamples(numberOfSamplesMSE);
 	metric->SetNormalizeMSE(vm["normalizemse"].as<bool>());
+	metric->SetNormalizeGD(vm["normalizegd"].as<bool>());
 	metric->SetNu(metricsConfig.mse.weight);
 	metric->SetNuDerivative(metricsConfig.mse.derivative);
 
@@ -960,6 +979,18 @@ int main(int argc, char *argv[])
 				LabelImageType::Pointer prewarpedLabel = labelPrewarp->GetOutput();
 				prewarpedLabel->DisconnectPipeline();
 				movingLabelMap = prewarpedLabel;
+
+				// IMPORTANT: the metric was wired to the original (un-warped)
+				// movingLabelMap earlier (see metric->SetMovingLabelMap above).
+				// After pre-warping we reassigned the local pointer, so refresh
+				// the metric's pointer — otherwise the Kappa label term keeps
+				// scoring against the original moving label map while every
+				// other channel sees the pre-warped one, producing a spurious
+				// gradient at iter 0 of the B-spline stage.
+				if (fixedLabelMap)
+				{
+					metric->SetMovingLabelMap(movingLabelMap);
+				}
 			}
 
 			std::cout << "  Pre-warping complete." << std::endl;
@@ -1056,6 +1087,16 @@ int main(int argc, char *argv[])
 	{
 		std::cerr << "ExceptionObject caught !" << std::endl;
 		std::cerr << err << std::endl;
+		return EXIT_FAILURE;
+	}
+	catch (std::exception &ex)
+	{
+		std::cerr << "std::exception caught: " << ex.what() << std::endl;
+		return EXIT_FAILURE;
+	}
+	catch (...)
+	{
+		std::cerr << "Unknown exception caught after label init." << std::endl;
 		return EXIT_FAILURE;
 	}
 
