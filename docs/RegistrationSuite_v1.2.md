@@ -367,7 +367,7 @@ To improve numerical stability and make weights portable across datasets, signed
 | `--labelkappaderiv` | 0.0 | Global derivative weight |
 | `--labelkappavec` | "" | Per-label value weights: `L1:w1,L2:w2,...` |
 | `--labelkappaderivvec` | "" | Per-label derivative weights |
-| `--labelsamples` | 0.1 | Fraction of pixels sampled |
+| `--labelsamples` | 0.1 | Voxel samples per label. Fraction `(0,1]` **or** absolute count `>1` |
 | `--labeldistmax` | 20.0 | Clamp signed distances to ±this value (mm) before loss |
 | `--labelnarrowband` | false | Use only samples within a distance band from either boundary |
 | `--labelbandwidth` | 5.0 | Narrow-band half-width (mm) |

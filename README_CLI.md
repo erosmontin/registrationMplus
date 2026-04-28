@@ -205,7 +205,7 @@ For a brain with 3 structures:
 ```bash
 --labelkappa <val>           Single weight for all labels
 --labelkappaderiv <val>      Derivative (default: same as kappa)
---labelsamples <val>         Label sampling % (default 0.1)
+--labelsamples <val>         Label samples per label. Fraction (0,1] OR absolute count >1 (default 0.1)
 ```
 
 ### **Transform & Optimizer**

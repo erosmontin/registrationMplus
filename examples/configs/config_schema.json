@@ -241,7 +241,7 @@
         },
         "samples": {
           "type": "number", "minimum": 0, "maximum": 1,
-          "description": "Label metric percentage of pixels used (--labelsamples). Default: 0.1 (10%)"
+          "description": "Label metric voxel samples per label (--labelsamples). Accepts a fraction in (0,1] OR an absolute count >1 (e.g. 20000). Default: 0.1 (10%)."
         },
         "distance_max": {
           "type": "number", "exclusiveMinimum": 0,

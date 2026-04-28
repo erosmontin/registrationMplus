@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <sstream>
 #include <iostream>
@@ -44,23 +46,29 @@ inline std::map<short, double> ParseLabelWeights(const std::string & s)
 //   - fraction in (0, 1]  -> interpreted as percentage of image voxels
 //   - absolute count > 1  -> interpreted as direct number of samples
 inline unsigned int ResolveLabelSampleCount(double rawLabelSamples,
-                                            unsigned int numberOfPixels)
+                                            std::size_t numberOfPixels)
 {
-    const unsigned int safePixelCount = std::max(1u, numberOfPixels);
-    const unsigned int defaultCount =
-        std::max(1u, static_cast<unsigned int>(std::ceil(0.1 * safePixelCount)));
+    const std::size_t safePixelCount = std::max<std::size_t>(1, numberOfPixels);
+    const std::size_t defaultCount =
+        std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil(0.1 * safePixelCount)));
+    const auto clampToUInt = [](std::size_t v) -> unsigned int {
+        constexpr std::size_t kMaxU = std::numeric_limits<unsigned int>::max();
+        return static_cast<unsigned int>(std::min(v, kMaxU));
+    };
 
     if (!std::isfinite(rawLabelSamples) || rawLabelSamples <= 0.0)
-        return defaultCount;
+        return clampToUInt(defaultCount);
 
     if (rawLabelSamples <= 1.0)
     {
-        const double asCount = std::ceil(rawLabelSamples * safePixelCount);
-        return std::max(1u, static_cast<unsigned int>(asCount));
+        const double asCount = std::ceil(rawLabelSamples * static_cast<double>(safePixelCount));
+        const std::size_t v = std::max<std::size_t>(1, static_cast<std::size_t>(asCount));
+        return clampToUInt(v);
     }
 
     const double capped = std::min(rawLabelSamples, static_cast<double>(safePixelCount));
-    return std::max(1u, static_cast<unsigned int>(std::ceil(capped)));
+    const std::size_t v = std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil(capped)));
+    return clampToUInt(v);
 }
 
 // ── Print all boost::program_options ────────────────────────────────────────
@@ -223,8 +231,9 @@ inline void WireLabelMaps(MetricPointer & metric, const po::variables_map & vm)
     metric->SetMovingLabelMap(movTmp);
     metric->SetLabelKappa(vm["labelkappa"].template as<double>());
     metric->SetLabelKappaDerivative(vm["labelkappaderiv"].template as<double>());
-    const unsigned int numberOfPixels =
-        static_cast<unsigned int>(fixTmp->GetLargestPossibleRegion().GetNumberOfPixels());
+    // Use a 64-bit pixel count so huge label maps don't truncate.
+    const std::size_t numberOfPixels =
+        static_cast<std::size_t>(fixTmp->GetLargestPossibleRegion().GetNumberOfPixels());
     metric->SetLabelNumberOfSamples(
         ResolveLabelSampleCount(vm["labelsamples"].template as<double>(), numberOfPixels));
     if (vm.count("labeldistmax"))

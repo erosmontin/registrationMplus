@@ -164,6 +164,9 @@ int main( int argc, char *argv[] )
 	("snapshotgrid",   po::value<bool>()->default_value(true),        "Overlay warped grid on snapshot panels (default on)")
 	("snapshotgridspacing", po::value<unsigned int>()->default_value(20), "Grid line spacing in voxels")
 	("snapshotlinewidth", po::value<double>()->default_value(0.0),    "Overlay line width in pixels (0 = auto)")
+	("snapshotscale",  po::value<double>()->default_value(1.0),       "Snapshot rendering scale (>0). 1.0 = native isotropic spacing, 2.0 = 2x larger PNG, 0.5 = half size")
+	("snapshotspacing",po::value<double>()->default_value(0.0),       "Absolute snapshot pixel spacing in mm (>0). Overrides --snapshotscale. e.g. 0.25 = render PNGs at 0.25 mm/pixel even if working grid is 2 mm.")
+	("snapshotinterp", po::value<int>()->default_value(1),            "Snapshot resampling interpolator: 0=linear (fast), 1=cubic B-spline (smoother, recommended for upsampling)")
 	("version", "Print version and exit")
 	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
 	("modality", po::value<std::string>()->default_value("custom"),
@@ -363,6 +366,9 @@ int main( int argc, char *argv[] )
 	const bool        SNAPSHOTGRID    = vm["snapshotgrid"].as<bool>();
 	const unsigned int SNAPSHOTGRIDSP  = vm["snapshotgridspacing"].as<unsigned int>();
 	const double      SNAPSHOTLINEW   = vm["snapshotlinewidth"].as<double>();
+	const double      SNAPSHOTSCALE   = vm["snapshotscale"].as<double>();
+	const double      SNAPSHOTSPACING = vm["snapshotspacing"].as<double>();
+	const int         SNAPSHOTINTERP  = vm["snapshotinterp"].as<int>();
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
 	typedef itk::Image<short, ImageDimension> LabelImageType;
@@ -783,6 +789,8 @@ if (method == "translation") {
 	  snapObs = SnapObsType::New();
 	  snapObs->SetFixedImage(fixedImage);
 	  snapObs->SetMovingImage(movingImage);
+	  snapObs->SetOriginalFixedImage(originalFixedImage);
+	  snapObs->SetOriginalMovingImage(originalMovingImage);
 	  snapObs->SetTransform(transform);
 	  snapObs->SetOutputDirectory(SNAPSHOTDIR);
 	  snapObs->SetSaveEveryNIterations(static_cast<unsigned int>(SNAPSHOTEVERY));
@@ -790,6 +798,9 @@ if (method == "translation") {
 	  snapObs->SetShowDeformationGrid(SNAPSHOTGRID);
 	  snapObs->SetGridSpacingPixels(SNAPSHOTGRIDSP);
 	  snapObs->SetOverlayLineWidthPixels(SNAPSHOTLINEW);
+	  snapObs->SetSnapshotScale(SNAPSHOTSCALE);
+	  snapObs->SetSnapshotPixelSpacingMM(SNAPSHOTSPACING);
+	  snapObs->SetSnapshotInterpolator(SNAPSHOTINTERP);
 	  snapObs->SetMetricValuesGetter([metric]() -> std::map<std::string,double> {
 		  return {
 			  {"Total", metric->GetLastValTotal()},

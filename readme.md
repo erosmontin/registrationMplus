@@ -238,7 +238,7 @@ When `--modality` is set to `multimodal` or `singlemodal`, sensible default weig
 | `--labelkappaderiv` | `0.0` | Global weight for the label signed-distance derivative (0 = off) |
 | `--labelkappavec` | `""` | Per-label metric weights: `"L1:w1,L2:w2,..."` |
 | `--labelkappaderivvec` | `""` | Per-label derivative weights: `"L1:w1,L2:w2,..."` |
-| `--labelsamples` | `0.1` | Label metric percentage of pixels used to evaluate the label term (0.1 = 10%) |
+| `--labelsamples` | `0.1` | Label metric voxel samples per label. **Accepts both forms**: a fraction in `(0, 1]` (e.g. `0.1` = 10% of voxels) **or** an absolute count `> 1` (e.g. `20000` = 20 000 samples). Larger images should prefer an absolute count to keep evaluation cost bounded. |
 | `--labeldistmax` | `20.0` | Clamp signed distances to ±this value (mm) before label loss evaluation |
 | `--labelnarrowband` | `false` | Restrict label loss to voxels close to either label boundary |
 | `--labelbandwidth` | `5.0` | Narrow-band half-width (mm) used when `--labelnarrowband=true` |

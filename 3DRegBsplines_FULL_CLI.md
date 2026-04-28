@@ -129,7 +129,7 @@
   --movinglabelmap N \             # Moving segmentation (N=none)
   --labelkappa 0.0 \               # Label metric weight (0=off)
   --labelkappaderiv 0.0 \          # Label metric derivative weight
-  --labelsamples 0.1 \             # Use 10% of labeled pixels
+  --labelsamples 0.1 \             # fraction (0,1]; pass >1 for absolute sample count
   --labelreport 1 \                # Report Dice every N iterations (0=off)
   \
   # ═══════════════════════════════════════════════════════════════
@@ -210,7 +210,7 @@
   \
   # Label correspondence
   --labelkappa 1.0 \               # Weight for label alignment
-  --labelsamples 0.5 \             # Use 50% of labeled voxels
+  --labelsamples 0.5 \             # fraction (0,1] or absolute count (>1)
   --labelreport 50 \               # Report Dice every 50 iterations
   \
   # Configuration

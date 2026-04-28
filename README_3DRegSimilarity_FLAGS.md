@@ -130,7 +130,7 @@ Preset behavior:
 | `--labelkappaderiv` | `0` | Global label derivative weight. |
 | `--labelkappavec` | `""` | Per-label value weights as `L1:w1,L2:w2,...`. |
 | `--labelkappaderivvec` | `""` | Per-label derivative weights as `L1:w1,L2:w2,...`. |
-| `--labelsamples` | `0.1` | Label metric sampling parameter. |
+| `--labelsamples` | `0.1` | Label metric sampling. Fraction `(0,1]` of voxels **or** absolute count `>1` (e.g. `20000`). |
 | `--labelreport` | `1` | Report per-label Dice every N iterations (`0` disables). |
 
 Notes:

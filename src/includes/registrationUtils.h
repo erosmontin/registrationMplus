@@ -491,7 +491,10 @@ public:
 #include "itkTileImageFilter.h"
 #include "itkExtractImageFilter.h"
 #include "itkResampleImageFilter.h"
+#include "itkIdentityTransform.h"
+#include "itkCompositeTransform.h"
 #include "itkLinearInterpolateImageFunction.h"
+#include "itkBSplineInterpolateImageFunction.h"
 #include "itkRescaleIntensityImageFilter.h"
 #include "itkIntensityWindowingImageFilter.h"
 #include "itkImageRegionIteratorWithIndex.h"
@@ -520,6 +523,25 @@ public:
 
     void SetFixedImage(const TImage* img)              { m_FixedImage  = img; }
     void SetMovingImage(const TImage* img)             { m_MovingImage = img; }
+    /** Optional: original (pre-working-resolution) fixed image.  When set,
+     *  snapshots are sourced from this image resampled directly to the
+     *  snapshot target spacing, instead of upsampling the (already coarse)
+     *  working-resolution m_FixedImage.  Yields visibly sharper PNGs when
+     *  the registration runs at e.g. 2 mm but original data is 0.5 mm. */
+    void SetOriginalFixedImage(const TImage* img)      { m_OriginalFixedImage  = img; }
+    /** Optional: original (pre-working-resolution) moving image.  See
+     *  SetOriginalFixedImage for rationale. */
+    void SetOriginalMovingImage(const TImage* img)     { m_OriginalMovingImage = img; }
+    /** Optional: initial linear transform that was applied to pre-warp the
+     *  working moving image into the fixed-image grid before registration
+     *  began (e.g. when --transformin loads an Affine/Rigid transform in
+     *  3DRegBsplines).  When set AND originals are used for snapshots,
+     *  the resample composes m_Transform first, then this initial transform,
+     *  so the original moving image lands in the correct space.
+     *  Stored as the abstract base so any linear transform type works. */
+    using InitialTransformType = itk::Transform<double, Dim, Dim>;
+    void SetInitialMovingTransform(const InitialTransformType* t)
+    { m_InitialMovingTransform = t; }
     void SetTransform(typename TTransform::Pointer t)  { m_Transform   = t; }
     void SetOutputDirectory(const std::string& dir)    { m_OutputDir   = dir; }
     void SetSaveEveryNIterations(unsigned int n)       { m_Every = std::max(1u, n); }
@@ -533,6 +555,24 @@ public:
     void SetGridSpacingPixels(unsigned int s)           { m_GridSpacing = std::max(2u, s); }
     /** Overlay line width in pixels.  Values <= 0 enable adaptive sizing. */
     void SetOverlayLineWidthPixels(double w)           { m_LineWidthPixels = (w > 0.0) ? w : 0.0; }
+    /** Snapshot rendering scale.  Multiplies the per-panel pixel resolution.
+     *  scale=1.0 (default) keeps the native isotropic spacing; scale=2.0
+     *  doubles the pixel dimensions of every panel; scale=0.5 halves them.
+     *  Internally the slice is resampled to spacing = minSp / scale, which
+     *  also shrinks any subsequent isotropic-resampling that would otherwise
+     *  be skipped.  Values <= 0 are clamped to 1.0. */
+    void SetSnapshotScale(double s)                    { m_SnapshotScale = (s > 0.0) ? s : 1.0; }
+    /** Absolute target pixel spacing (mm) for snapshot panels.  When > 0
+     *  this OVERRIDES SetSnapshotScale and renders every panel at exactly
+     *  this physical pixel size, regardless of the working image resolution.
+     *  Use a small value (e.g. 0.25 mm) to get smooth, high-resolution PNGs
+     *  even when the registration is running on a coarse 2 mm working grid.
+     *  Values <= 0 disable the override and fall back to SetSnapshotScale. */
+    void SetSnapshotPixelSpacingMM(double mm)          { m_SnapshotSpacingMM = (mm > 0.0) ? mm : 0.0; }
+    /** Interpolator used when resampling slices for snapshots.
+     *  0 = linear (default, fast),
+     *  1 = cubic B-spline (smoother, recommended for upsampling). */
+    void SetSnapshotInterpolator(int kind)             { m_SnapshotInterp = (kind == 1) ? 1 : 0; }
     /** If true, draw the actual B-spline control-point lattice (warped by
      *  the current transform parameters) instead of a regular pixel grid.
      *  Only has effect when TTransform is itk::BSplineTransform<double,3,3>.
@@ -692,12 +732,16 @@ protected:
     IterationSnapshotObserver()
         : m_Every(1), m_SaveStack(false), m_ShowGrid(true),
           m_GridSpacing(20), m_LineWidthPixels(0.0),
-          m_ShowBSplineMesh(false), m_IterCount(0),
-          m_CSVHeaderWritten(false) {}
+          m_ShowBSplineMesh(false), m_SnapshotScale(1.0),
+          m_SnapshotSpacingMM(0.0), m_SnapshotInterp(0),
+          m_IterCount(0), m_CSVHeaderWritten(false) {}
 
 private:
     typename TImage::ConstPointer      m_FixedImage;
     typename TImage::ConstPointer      m_MovingImage;
+    typename TImage::ConstPointer      m_OriginalFixedImage;   // optional, full-res source
+    typename TImage::ConstPointer      m_OriginalMovingImage;  // optional, full-res source
+    typename InitialTransformType::ConstPointer m_InitialMovingTransform; // optional pre-warp
     typename TTransform::Pointer       m_Transform;
     std::string                        m_OutputDir;
     unsigned int                       m_Every;
@@ -706,6 +750,9 @@ private:
     unsigned int                       m_GridSpacing;
     double                             m_LineWidthPixels;
     bool                               m_ShowBSplineMesh;
+    double                             m_SnapshotScale;
+    double                             m_SnapshotSpacingMM;
+    int                                m_SnapshotInterp;
     unsigned long                      m_IterCount;
 
     // ── per-metric value logging ──────────────────────────────────────────
@@ -722,7 +769,12 @@ private:
     {
         using ExtractType = itk::ExtractImageFilter<TImage, SliceType>;
         auto ext = ExtractType::New();
-        ext->SetDirectionCollapseToSubmatrix();
+        // Use Identity collapse strategy: the 2D output direction is set to identity
+        // regardless of the 3D input direction matrix.  This is safe for PNG
+        // rendering (we only care about pixel content, not physical orientation)
+        // and avoids ITK's "Invalid submatrix" validation failure that occurs
+        // when the 3D image has an oblique (non-axis-aligned) direction matrix.
+        ext->SetDirectionCollapseToIdentity();
 
         auto region = vol->GetLargestPossibleRegion();
         auto sz     = region.GetSize();
@@ -1064,35 +1116,52 @@ private:
         return out;
     }
 
-    /** Resample a 2D slice to isotropic pixel spacing (smallest spacing wins).
-     *  If spacing is already isotropic (within 1% tolerance), returns the
-     *  input unchanged.  This fixes the squashed-looking debug PNGs that
-     *  occur with anisotropic voxels (e.g. sagittal acquisitions). */
+    /** Compute the snapshot target spacing given the source slice's minimum spacing.
+     *  Mirrors ResampleSliceIsotropic's logic so callers (e.g. B-spline mesh
+     *  overlay) know the voxel→pixel scale factor.
+     *    1. If m_SnapshotSpacingMM > 0 → that absolute spacing (mm).
+     *    2. Else                         → sourceMinSpacing / m_SnapshotScale. */
+    double
+    ComputeSnapshotTargetSpacing(double sourceMinSpacing) const
+    {
+        if (m_SnapshotSpacingMM > 0.0)
+            return m_SnapshotSpacingMM;
+        const double scale = (m_SnapshotScale > 0.0) ? m_SnapshotScale : 1.0;
+        return sourceMinSpacing / scale;
+    }
+
+    /** Resample a 2D slice for snapshot rendering.
+     *  Set forceLinear=true for binary masks (e.g. warped grid overlay) to
+     *  avoid cubic B-spline overshoots on sparse 0/1 inputs. */
     typename SliceType::Pointer
-    ResampleSliceIsotropic(typename SliceType::Pointer slice) const
+    ResampleSliceIsotropic(typename SliceType::Pointer slice,
+                           bool forceLinear = false) const
     {
         auto sp = slice->GetSpacing();
         double minSp = sp[0];
         for (unsigned d = 1; d < Dim - 1; ++d)
             if (sp[d] < minSp) minSp = sp[d];
 
+        const double targetSp = ComputeSnapshotTargetSpacing(minSp);
+
         bool needResample = false;
         for (unsigned d = 0; d < Dim - 1; ++d)
         {
-            if (std::abs(sp[d] - minSp) / minSp > 0.01)
+            if (std::abs(sp[d] - targetSp) / targetSp > 0.01)
             { needResample = true; break; }
         }
         if (!needResample) return slice;
 
-        // Compute new size to cover the same physical extent
+        // Compute new size to cover the same physical extent at targetSp
         auto oldSize = slice->GetLargestPossibleRegion().GetSize();
         typename SliceType::SizeType    newSize;
         typename SliceType::SpacingType newSpacing;
         for (unsigned d = 0; d < Dim - 1; ++d)
         {
-            newSpacing[d] = minSp;
+            newSpacing[d] = targetSp;
             newSize[d] = static_cast<typename SliceType::SizeType::SizeValueType>(
-                std::ceil(oldSize[d] * sp[d] / minSp));
+                std::max<size_t>(1u,
+                    static_cast<size_t>(std::ceil(oldSize[d] * sp[d] / targetSp))));
         }
 
         using ResampleSlice = itk::ResampleImageFilter<SliceType, SliceType>;
@@ -1103,8 +1172,25 @@ private:
         rs->SetOutputOrigin(slice->GetOrigin());
         rs->SetOutputDirection(slice->GetDirection());
         rs->SetDefaultPixelValue(0);
-        using LinInterp = itk::LinearInterpolateImageFunction<SliceType, double>;
-        rs->SetInterpolator(LinInterp::New());
+        // Force linear for binary masks (e.g. warped grid overlay).  Cubic
+        // B-spline overshoots on a sparse 0/1 mask produce negative values
+        // and values >1, which RescaleIntensityImageFilter then remaps so the
+        // background becomes non-zero — turning the whole image green when
+        // the mask is used as an alpha channel.
+        if (m_SnapshotInterp == 1 && !forceLinear)
+        {
+            // Cubic B-spline: smooth upsampling, ideal for low-resolution
+            // working grids (e.g. 2 mm) being rendered at 0.25 mm.
+            using BSplineInterp = itk::BSplineInterpolateImageFunction<SliceType, double>;
+            auto bsInterp = BSplineInterp::New();
+            bsInterp->SetSplineOrder(3);
+            rs->SetInterpolator(bsInterp);
+        }
+        else
+        {
+            using LinInterp = itk::LinearInterpolateImageFunction<SliceType, double>;
+            rs->SetInterpolator(LinInterp::New());
+        }
         rs->Update();
         typename SliceType::Pointer out = rs->GetOutput();
         out->DisconnectPipeline();
@@ -1389,18 +1475,144 @@ public:
         {
             itksys::SystemTools::MakeDirectory(m_OutputDir);
 
+            // ── Build the display geometry ─────────────────────────────
+            // When originals are provided AND the user asked for a finer
+            // snapshot than the working grid, resample the originals onto
+            // the fixed-image frame at the snapshot target spacing in X/Y.
+            // This avoids upsampling already-coarse working data.
+            typename TImage::ConstPointer movSrc =
+                m_OriginalMovingImage ? m_OriginalMovingImage : m_MovingImage;
+            typename TImage::ConstPointer fixSrc =
+                m_OriginalFixedImage ? m_OriginalFixedImage : m_FixedImage;
+
+            auto fixSpD0  = m_FixedImage->GetSpacing();
+            auto fixSize0 = m_FixedImage->GetLargestPossibleRegion().GetSize();
+            const double fixMinXY = std::min(fixSpD0[0], fixSpD0[1]);
+            const double snapSp3D = ComputeSnapshotTargetSpacing(fixMinXY);
+
+            typename TImage::SpacingType outSpacing = fixSpD0;
+            typename TImage::SizeType    outSize    = fixSize0;
+            const bool useOriginals =
+                (m_OriginalFixedImage || m_OriginalMovingImage) &&
+                snapSp3D > 0.0 && snapSp3D < fixMinXY * 0.99;
+            // For original images, first resample them to the working image's FULL geometry
+            // (all dimensions), then apply the snapshot spacing to X/Y only.
+            // This ensures consistent coordinate systems and avoids frame geometry issues.
+            if (useOriginals)
+            {
+                // First pass: resample originals to working resolution (full geometry)
+                using Resample = itk::ResampleImageFilter<TImage, TImage>;
+                auto rsToWorking = Resample::New();
+                rsToWorking->SetInput(fixSrc);
+                rsToWorking->SetTransform(itk::IdentityTransform<double, Dim>::New());
+                rsToWorking->SetSize(fixSize0);
+                rsToWorking->SetOutputSpacing(fixSpD0);
+                rsToWorking->SetOutputOrigin(m_FixedImage->GetOrigin());
+                rsToWorking->SetOutputDirection(m_FixedImage->GetDirection());
+                rsToWorking->SetDefaultPixelValue(0);
+                rsToWorking->Update();
+                typename TImage::Pointer fixStaged = rsToWorking->GetOutput();
+                fixStaged->DisconnectPipeline();
+                fixSrc = const_cast<const TImage*>(fixStaged.GetPointer());
+
+                // Now apply snapshot spacing adjustment to X/Y only
+                for (unsigned d = 0; d < Dim - 1; ++d)
+                {
+                    const double s = fixSpD0[d] / snapSp3D;
+                    outSpacing[d] = snapSp3D;
+                    outSize[d] = static_cast<typename TImage::SizeType::SizeValueType>(
+                        std::max<size_t>(1u,
+                            static_cast<size_t>(std::ceil(fixSize0[d] * s))));
+                }
+            }
+
+            // Pre-resample original moving image to working resolution for coordinate consistency
+            if (useOriginals && (movSrc == m_OriginalMovingImage))
+            {
+                using Resample = itk::ResampleImageFilter<TImage, TImage>;
+                auto rsMovToWorking = Resample::New();
+                rsMovToWorking->SetInput(movSrc);
+                rsMovToWorking->SetTransform(itk::IdentityTransform<double, Dim>::New());
+                rsMovToWorking->SetSize(fixSize0);
+                rsMovToWorking->SetOutputSpacing(fixSpD0);
+                rsMovToWorking->SetOutputOrigin(m_FixedImage->GetOrigin());
+                rsMovToWorking->SetOutputDirection(m_FixedImage->GetDirection());
+                rsMovToWorking->SetDefaultPixelValue(0);
+                rsMovToWorking->Update();
+                typename TImage::Pointer movStaged = rsMovToWorking->GetOutput();
+                movStaged->DisconnectPipeline();
+                movSrc = const_cast<const TImage*>(movStaged.GetPointer());
+            }
+
             // Resample the moving image with the current transform
             using Resample = itk::ResampleImageFilter<TImage, TImage>;
             auto rs = Resample::New();
-            rs->SetInput(m_MovingImage);
-            rs->SetTransform(m_Transform);
-            rs->SetSize(m_FixedImage->GetLargestPossibleRegion().GetSize());
-            rs->SetOutputSpacing(m_FixedImage->GetSpacing());
+            rs->SetInput(movSrc);
+            // When the original moving was pre-warped by an initial linear
+            // transform before registration started, the registration
+            // m_Transform alone maps fixed -> pre-warped-moving; to look up
+            // the *original* moving we must compose: first m_Transform,
+            // then the initial linear transform.  ITK CompositeTransform
+            // applies transforms in REVERSE add order (last added applied
+            // first to the point), so add the initial transform LAST.
+            if (useOriginals && m_InitialMovingTransform.IsNotNull())
+            {
+                using Composite = itk::CompositeTransform<double, Dim>;
+                auto comp = Composite::New();
+                comp->AddTransform(
+                    const_cast<InitialTransformType*>(m_InitialMovingTransform.GetPointer()));
+                comp->AddTransform(m_Transform);
+                rs->SetTransform(comp);
+            }
+            else
+            {
+                rs->SetTransform(m_Transform);
+            }
+            rs->SetSize(outSize);
+            rs->SetOutputSpacing(outSpacing);
             rs->SetOutputOrigin(m_FixedImage->GetOrigin());
             rs->SetOutputDirection(m_FixedImage->GetDirection());
             rs->SetDefaultPixelValue(0);
+            if (useOriginals && m_SnapshotInterp == 1)
+            {
+                using BSplineInterp3D =
+                    itk::BSplineInterpolateImageFunction<TImage, double>;
+                auto bsi = BSplineInterp3D::New();
+                bsi->SetSplineOrder(3);
+                rs->SetInterpolator(bsi);
+            }
             rs->Update();
             typename TImage::Pointer resampled = rs->GetOutput();
+            resampled->DisconnectPipeline();
+
+            // Resample the (display) fixed image onto the same grid.
+            // When not using originals, this is a no-op alias to m_FixedImage.
+            typename TImage::ConstPointer fixDisplay = m_FixedImage;
+            if (useOriginals)
+            {
+                using IdT = itk::IdentityTransform<double, Dim>;
+                auto idT = IdT::New();
+                auto rsF = Resample::New();
+                rsF->SetInput(fixSrc);
+                rsF->SetTransform(idT);
+                rsF->SetSize(outSize);
+                rsF->SetOutputSpacing(outSpacing);
+                rsF->SetOutputOrigin(m_FixedImage->GetOrigin());
+                rsF->SetOutputDirection(m_FixedImage->GetDirection());
+                rsF->SetDefaultPixelValue(0);
+                if (m_SnapshotInterp == 1)
+                {
+                    using BSplineInterp3D =
+                        itk::BSplineInterpolateImageFunction<TImage, double>;
+                    auto bsi = BSplineInterp3D::New();
+                    bsi->SetSplineOrder(3);
+                    rsF->SetInterpolator(bsi);
+                }
+                rsF->Update();
+                typename TImage::Pointer fd = rsF->GetOutput();
+                fd->DisconnectPipeline();
+                fixDisplay = fd;
+            }
 
             if (m_SaveStack)
             {
@@ -1421,11 +1633,11 @@ public:
                 // ── 2×2 panel PNG ───────────────────────────────────────
                 //  (1,1) fixed               | (1,2) registered moving
                 //  (2,1) checkerboard         | (2,2) registered + green grid
-                auto sz = m_FixedImage->GetLargestPossibleRegion().GetSize();
+                auto sz = fixDisplay->GetLargestPossibleRegion().GetSize();
                 unsigned int midZ = sz[Dim - 1] / 2;
 
-                auto fixSliceRaw = ExtractAxialSlice(m_FixedImage.GetPointer(), midZ);
-                auto movSliceRaw = ExtractAxialSlice(resampled.GetPointer(),    midZ);
+                auto fixSliceRaw = ExtractAxialSlice(fixDisplay.GetPointer(), midZ);
+                auto movSliceRaw = ExtractAxialSlice(resampled.GetPointer(),  midZ);
 
                 // Resample to isotropic pixels so anisotropic voxels
                 // (e.g. sagittal acquisitions) render with correct aspect ratio
@@ -1465,11 +1677,19 @@ public:
                 const int imgH = static_cast<int>(sliceSz2[1]);
 
                 // Compute scale factors from original fixed-image voxel
-                // coords to isotropic-resampled pixel coords
+                // coords to isotropic-resampled pixel coords.
+                //
+                // The slice was upsampled by ResampleSliceIsotropic to the
+                // snapshot target spacing (controlled by --snapshotspacing /
+                // --snapshotscale).  Use the *actual* target spacing here, not
+                // min(fixSp), otherwise mesh and grid overlays land on wrong
+                // pixels whenever the user requests a finer snapshot than the
+                // working grid (e.g. 0.5 mm snapshot from 2 mm working voxels).
                 auto fixSp3D = m_FixedImage->GetSpacing();
                 double minSp2D = std::min(fixSp3D[0], fixSp3D[1]);
-                const double isoScaleX = fixSp3D[0] / minSp2D;
-                const double isoScaleY = fixSp3D[1] / minSp2D;
+                const double snapSp = ComputeSnapshotTargetSpacing(minSp2D);
+                const double isoScaleX = fixSp3D[0] / snapSp;
+                const double isoScaleY = fixSp3D[1] / snapSp;
 
                 if (m_ShowBSplineMesh)
                 {
@@ -1536,21 +1756,41 @@ public:
                     // used for the moving image.  Grid lines that were
                     // originally straight will bend wherever the B-spline
                     // deforms.
-                    auto gridImg = MakeGridImage(m_MovingImage.GetPointer());
+                    auto gridImg = MakeGridImage(movSrc.GetPointer());
 
                     using ResampleGrid = itk::ResampleImageFilter<TImage, TImage>;
                     auto rsg = ResampleGrid::New();
                     rsg->SetInput(gridImg);
-                    rsg->SetTransform(m_Transform);
-                    rsg->SetSize(m_FixedImage->GetLargestPossibleRegion().GetSize());
-                    rsg->SetOutputSpacing(m_FixedImage->GetSpacing());
+                    if (useOriginals && m_InitialMovingTransform.IsNotNull())
+                    {
+                        // Same composition as for the moving image so the
+                        // grid lines bend in the same coordinate space.
+                        using Composite = itk::CompositeTransform<double, Dim>;
+                        auto comp = Composite::New();
+                        comp->AddTransform(
+                            const_cast<InitialTransformType*>(m_InitialMovingTransform.GetPointer()));
+                        comp->AddTransform(m_Transform);
+                        rsg->SetTransform(comp);
+                    }
+                    else
+                    {
+                        rsg->SetTransform(m_Transform);
+                    }
+                    rsg->SetSize(outSize);
+                    rsg->SetOutputSpacing(outSpacing);
                     rsg->SetOutputOrigin(m_FixedImage->GetOrigin());
                     rsg->SetOutputDirection(m_FixedImage->GetDirection());
                     rsg->SetDefaultPixelValue(0);
                     rsg->Update();
 
                     auto warpedGridSliceRaw = ExtractAxialSlice(rsg->GetOutput(), midZ);
-                    auto warpedGridSlice = ResampleSliceIsotropic(warpedGridSliceRaw);
+                    // Force linear interpolation for the binary grid mask.
+                    // Cubic B-spline overshoots produce negative values and
+                    // values > 1 from a sparse 0/1 input; ToUChar then maps the
+                    // negative minimum to 0, lifting the background to a
+                    // non-zero alpha — the entire image would tint green.
+                    auto warpedGridSlice = ResampleSliceIsotropic(warpedGridSliceRaw,
+                                                                   /*forceLinear=*/true);
                     auto wgUC = ToUChar(warpedGridSlice.GetPointer());
 
                     gridRGB = OverlayGreenGrid(mRGB.GetPointer(), wgUC.GetPointer());

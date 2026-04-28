@@ -322,7 +322,7 @@ public:
 	{
 			double norm = 0.0;
 	#pragma omp parallel for reduction(+:norm)
-	for (unsigned int i = 0; i < derivative.size(); ++i) {
+	for (long long i = 0; i < static_cast<long long>(derivative.size()); ++i) {
 		norm += derivative[i] * derivative[i];
 	}
 	norm = std::sqrt(norm);
@@ -330,7 +330,7 @@ public:
 	// Check if norm is large enough to avoid division by zero
 	if (norm > 1.0e-10) {
 		#pragma omp parallel for
-		for (unsigned int i = 0; i < derivative.size(); ++i) {
+		for (long long i = 0; i < static_cast<long long>(derivative.size()); ++i) {
 			derivative[i] /= norm;
 		}
 	}
@@ -346,7 +346,7 @@ double maxVal = *std::max_element(derivative.begin(), derivative.end());
 if (maxVal != minVal)
 {
 	#pragma omp parallel for
-	for (unsigned int i = 0; i < derivative.size(); ++i)
+	for (long long i = 0; i < static_cast<long long>(derivative.size()); ++i)
 	{
 		derivative[i] = 2 * (derivative[i] - minVal) / (maxVal - minVal) - 1;
 	}

@@ -8,6 +8,7 @@
 // <<< add for auto-eta
 #include "itkGradientMagnitudeImageFilter.h"
 #include "itkImageRegionIterator.h"
+#include <iomanip>
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -347,9 +348,12 @@ namespace itk
 						mags.push_back(it.Get());
 					std::sort(mags.begin(), mags.end());
 					double etaF = mags[static_cast<size_t>(percentile * mags.size())];
-					if (etaF < kMinEta) etaF = kMinEta;
+					bool etaFAtFloor = false;
+					if (etaF < kMinEta) { etaF = kMinEta; etaFAtFloor = true; }
 					this->SetFixedEta(etaF);
-					std::cout << "  Fixed η: " << etaF << std::endl;
+					std::cout << "  Fixed η: " << std::scientific << std::setprecision(6) << etaF
+					          << std::defaultfloat << (etaFAtFloor ? " [WARNING: clamped to floor — degenerate fixed-image gradient]" : "")
+					          << std::endl;
 				}
 
 				// Moving image eta (computed independently)
@@ -371,9 +375,20 @@ namespace itk
 						mags.push_back(it.Get());
 					std::sort(mags.begin(), mags.end());
 					double etaM = mags[static_cast<size_t>(percentile * mags.size())];
-					if (etaM < kMinEta) etaM = kMinEta;
+					bool etaMAtFloor = false;
+					if (etaM < kMinEta) { etaM = kMinEta; etaMAtFloor = true; }
 					this->SetMovingEta(etaM);
-					std::cout << "  Moving η: " << etaM << std::endl;
+					std::cout << "  Moving η: " << std::scientific << std::setprecision(6) << etaM
+					          << std::defaultfloat << (etaMAtFloor ? " [WARNING: clamped to floor — degenerate moving-image gradient]" : "")
+					          << std::endl;
+					// Safety: precomputing the moving NGF with a degenerate η produces
+					// huge ratios in the gradient buffer that lead to NaN/Inf and
+					// access violations on the first GetDerivative call.  Auto-disable.
+					if (etaMAtFloor && this->m_NGFPrecomputeGradient)
+					{
+						std::cout << "  [SAFETY] Auto-disabling --ngfprecompute because moving η is at floor." << std::endl;
+						this->m_NGFPrecomputeGradient = false;
+					}
 				}
 			}
 
@@ -777,7 +792,7 @@ namespace itk
 
 			derivative = a;
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
+			for (long long p = 0; p < static_cast<long long>(derivative.GetSize()); ++p)
 			{
 				derivative[p] =
 					  wA * a[p]
@@ -801,7 +816,7 @@ namespace itk
 				{
 					const double scale = avgNorm / mergedNorm;
 #pragma omp parallel for
-					for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
+					for (long long p = 0; p < static_cast<long long>(derivative.GetSize()); ++p)
 						derivative[p] *= scale;
 				}
 			}
@@ -866,7 +881,7 @@ namespace itk
 
 			derivative = a;
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
+			for (long long p = 0; p < static_cast<long long>(derivative.GetSize()); ++p)
 			{
 				derivative[p] =
 					  this->m_AlphaDerivative      * this->m_ScaleMA    * a[p]
@@ -886,7 +901,7 @@ namespace itk
 			//   ∇V = α·∇V_MI + λ·∇V_NGF + ν·∇V_MSE + ρ·∇V_GD + γ·∇V_NC + κ·∇V_Label + σ·∇V_NMI
 			derivative = a;
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < derivative.GetSize(); ++p)
+			for (long long p = 0; p < static_cast<long long>(derivative.GetSize()); ++p)
 			{
 				derivative[p] =
 					  this->m_AlphaDerivative      * a[p]
@@ -929,7 +944,7 @@ namespace itk
 	  
 	double norm = 0.0;
 	#pragma omp parallel for reduction(+:norm)
-	for (unsigned int i = 0; i < der.size(); ++i) {
+	for (long long i = 0; i < static_cast<long long>(der.size()); ++i) {
 		norm += der[i] * der[i];
 	}
 	return std::sqrt(norm);
@@ -1119,7 +1134,7 @@ namespace itk
 
 			Derivative.SetSize(nParams);
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < nParams; ++p)
+			for (long long p = 0; p < static_cast<long long>(nParams); ++p)
 				Derivative[p] = wA*rawDerA[p] + wB*rawDerB[p] + wC*rawDerC[p]
 				              + wD*rawDerD[p] + wE*rawDerE[p] + wF*rawDerF[p]
 				              + wG*rawDerG[p];
@@ -1132,7 +1147,7 @@ namespace itk
 				if (mergedNorm > kMinNorm) {
 					const double scale = avgNorm / mergedNorm;
 #pragma omp parallel for
-					for (long unsigned int p = 0; p < nParams; ++p)
+					for (long long p = 0; p < static_cast<long long>(nParams); ++p)
 						Derivative[p] *= scale;
 				}
 			}
@@ -1181,7 +1196,7 @@ namespace itk
 
 			Derivative.SetSize(nParams);
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < nParams; ++p)
+			for (long long p = 0; p < static_cast<long long>(nParams); ++p)
 				Derivative[p] = this->m_AlphaDerivative  * this->m_ScaleMA    * rawDerA[p]
 				              + this->m_LambdaDerivative * this->m_ScaleNGF   * rawDerB[p]
 				              + this->m_NuDerivative     * this->m_ScaleMSE   * rawDerC[p]
@@ -1204,7 +1219,7 @@ namespace itk
 			// Mode 0: consistent weighted sum
 			Derivative.SetSize(nParams);
 #pragma omp parallel for
-			for (long unsigned int p = 0; p < nParams; ++p)
+			for (long long p = 0; p < static_cast<long long>(nParams); ++p)
 				Derivative[p] = this->m_AlphaDerivative  * rawDerA[p]
 				              + this->m_LambdaDerivative * rawDerB[p]
 				              + this->m_NuDerivative     * rawDerC[p]
@@ -1281,6 +1296,36 @@ namespace itk
 	    using UCImage     = itk::Image<unsigned char, TFixedImage::ImageDimension>;
 	    using CastToUC    = itk::CastImageFilter<TFixedImage, UCImage>;
 	    using DistFilter  = itk::SignedMaurerDistanceMapImageFilter<UCImage, TFixedImage>;
+
+	    // Guard against an all-zero binary mask. SignedMaurerDistanceMapImageFilter
+	    // fills the output with NumericTraits::max() (~3.4e+38) when no foreground
+	    // is present, which then squares into ~1e+76 in the metric and freezes the
+	    // optimizer. Return a finite, large-but-bounded distance map instead.
+	    bool hasForeground = false;
+	    {
+	        itk::ImageRegionConstIterator<TFixedImage> it(
+	            binaryImage, binaryImage->GetLargestPossibleRegion());
+	        for (; !it.IsAtEnd(); ++it)
+	            if (it.Get() != 0.0f) { hasForeground = true; break; }
+	    }
+	    if (!hasForeground)
+	    {
+	        std::cout << "[LabelMetric] WARNING: binary mask is empty after "
+	                     "resampling onto the reference geometry — returning a "
+	                     "constant distance map (label term contributes nothing "
+	                     "for this label). Check that the reference image FOV "
+	                     "covers the label."
+	                  << std::endl;
+	        typename TFixedImage::Pointer out = TFixedImage::New();
+	        out->CopyInformation(binaryImage);
+	        out->SetRegions(binaryImage->GetLargestPossibleRegion());
+	        out->Allocate();
+	        // Use the user-configured clamp distance so the residual normalises
+	        // to ±1 and produces zero gradient (constant field).
+	        const double dmax = std::max(1e-6, m_LabelDistanceMax);
+	        out->FillBuffer(static_cast<typename TFixedImage::PixelType>(dmax));
+	        return out;
+	    }
 
 	    auto castUC = CastToUC::New();
 	    castUC->SetInput(binaryImage);
@@ -1507,17 +1552,16 @@ namespace itk
 	    const double flatWeight    = 1.0 / static_cast<double>(nLabels);
 
 	    // Stride to hit approximately m_LabelNumberOfSamples sample points
-	    const unsigned long totalPix = this->m_FixedImage
+	    using SizeValueType = itk::SizeValueType;
+	    const SizeValueType totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
-	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
+	    const SizeValueType sampleTarget = std::max<SizeValueType>(
+	        1, static_cast<SizeValueType>(m_LabelNumberOfSamples));
 	    const double distNorm = std::max(1e-6, m_LabelDistanceMax);
-	    unsigned int stride = 1;
+	    SizeValueType stride = 1;
 	    if (sampleTarget < totalPix)
 	    {
-	        stride = static_cast<unsigned int>(
-	            std::ceil(std::pow(static_cast<double>(totalPix) /
-	                               static_cast<double>(sampleTarget),
-	                               1.0 / TFixedImage::ImageDimension)));
+	        stride = totalPix / sampleTarget;
 	        if (stride < 1) stride = 1;
 	    }
 
@@ -1534,7 +1578,7 @@ namespace itk
 
 	        double sumSqDiff = 0.0;
 	        long long countF = 0, countM = 0, countIntersect = 0;
-	        unsigned int n = 0, pixIdx = 0;
+	        unsigned int n = 0; SizeValueType pixIdx = 0;
 
 	        itk::ImageRegionConstIteratorWithIndex<TFixedImage> it(
 	            fixedDistMap, fixedDistMap->GetLargestPossibleRegion());
@@ -1602,18 +1646,17 @@ namespace itk
 	    const unsigned int nLabels   = static_cast<unsigned int>(m_LabelValues.size());
 	    const double       flatWeight= 1.0 / static_cast<double>(nLabels);
 
-	    const unsigned long totalPix = this->m_FixedImage
+	    using SizeValueType = itk::SizeValueType;
+	    const SizeValueType totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
-	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
+	    const SizeValueType sampleTarget = std::max<SizeValueType>(
+	        1, static_cast<SizeValueType>(m_LabelNumberOfSamples));
 	    const double distNorm = std::max(1e-6, m_LabelDistanceMax);
 	    const double dmax = std::max(1e-6, m_LabelDistanceMax);
-	    unsigned int stride = 1;
+	    SizeValueType stride = 1;
 	    if (sampleTarget < totalPix)
 	    {
-	        stride = static_cast<unsigned int>(
-	            std::ceil(std::pow(static_cast<double>(totalPix) /
-	                               static_cast<double>(sampleTarget),
-	                               1.0 / TFixedImage::ImageDimension)));
+	        stride = totalPix / sampleTarget;
 	        if (stride < 1) stride = 1;
 	    }
 
@@ -1629,7 +1672,7 @@ namespace itk
 
 	        // Accumulate per-label contribution into a temporary vector
 	        std::vector<double> localDeriv(nParams, 0.0);
-	        unsigned int n = 0, pixIdx = 0;
+	        unsigned int n = 0; SizeValueType pixIdx = 0;
 
 	        itk::ImageRegionConstIteratorWithIndex<TFixedImage> it(
 	            fixedDistMap, fixedDistMap->GetLargestPossibleRegion());
@@ -1682,12 +1725,13 @@ namespace itk
 
 	        if (n == 0) continue;
 
-	        // Scale by m_LabelKappa * kappaL / N — must include m_LabelKappa to
-	        // match GetKappaValue which returns m_LabelKappa * totalValue.
-	        const double scale = m_LabelKappa * kappaL / static_cast<double>(n);
-	        #pragma omp parallel for
-	        for (unsigned int j = 0; j < nParams; ++j)
-	            derivative[j] += scale * localDeriv[j];
+        // Per-label scale only. The global label weight (m_LabelKappaDerivative)
+        // is applied by the caller (GetDerivative / GetValueAndDerivative),
+        // mirroring how every other sub-metric exposes its raw derivative.
+        const double scale = kappaL / static_cast<double>(n);
+        #pragma omp parallel for
+        for (long long j = 0; j < static_cast<long long>(nParams); ++j)
+            derivative[j] += scale * localDeriv[j];
 	    }
 	}
 
@@ -1709,17 +1753,16 @@ namespace itk
 	    const unsigned int nLabels    = static_cast<unsigned int>(m_LabelValues.size());
 	    const double       flatWeight = 1.0 / static_cast<double>(nLabels);
 
-	    const unsigned long totalPix = this->m_FixedImage
+	    using SizeValueType = itk::SizeValueType;
+	    const SizeValueType totalPix = this->m_FixedImage
 	        ->GetLargestPossibleRegion().GetNumberOfPixels();
-	    const unsigned int sampleTarget = std::max(1u, m_LabelNumberOfSamples);
+	    const SizeValueType sampleTarget = std::max<SizeValueType>(
+	        1, static_cast<SizeValueType>(m_LabelNumberOfSamples));
 	    const double distNorm = std::max(1e-6, m_LabelDistanceMax);
 	    const double dmax = std::max(1e-6, m_LabelDistanceMax);
-	    unsigned int stride = 1;
+	    SizeValueType stride = 1;
 	    if (sampleTarget < totalPix) {
-	        stride = static_cast<unsigned int>(
-	            std::ceil(std::pow(static_cast<double>(totalPix) /
-	                               static_cast<double>(sampleTarget),
-	                               1.0 / TFixedImage::ImageDimension)));
+	        stride = totalPix / sampleTarget;
 	        if (stride < 1) stride = 1;
 	    }
 
@@ -1739,7 +1782,7 @@ namespace itk
 	        double sumSqDiff = 0.0;
 	        long long countF = 0, countM = 0, countIntersect = 0;
 	        std::vector<double> localDeriv(nParams, 0.0);
-	        unsigned int n = 0, pixIdx = 0;
+	        unsigned int n = 0; SizeValueType pixIdx = 0;
 
 	        itk::ImageRegionConstIteratorWithIndex<TFixedImage> it(
 	            fixedDistMap, fixedDistMap->GetLargestPossibleRegion());
@@ -1803,10 +1846,11 @@ namespace itk
 
 	        totalValue += kappaV * sumSqDiff / static_cast<double>(n);
 
-        // Include m_LabelKappa to keep value/derivative consistent.
-        const double scaleD = m_LabelKappa * kappaD / static_cast<double>(n);
+        // Per-label scale only. Global m_LabelKappaDerivative is applied by
+        // the caller (GetValueAndDerivative), matching every other sub-metric.
+        const double scaleD = kappaD / static_cast<double>(n);
         #pragma omp parallel for
-        for (unsigned int j = 0; j < nParams; ++j)
+        for (long long j = 0; j < static_cast<long long>(nParams); ++j)
             derivative[j] += scaleD * localDeriv[j];
 
         double dice = 0.0;
@@ -1822,3 +1866,4 @@ namespace itk
 } // end namespace itk
 
 #endif
+

@@ -147,7 +147,7 @@
   --fixedlabelmap fixed_labels.nii.gz \
   --movinglabelmap moving_labels.nii.gz \
   --labelkappa 1.0 \
-  --labelsamples 0.5 \
+  --labelsamples 0.5 \          # fraction (0,1] or absolute count >1 (e.g. 20000)
   --alpha 1.0 \
   --lambda 0.5 \
   --gridresolution 50

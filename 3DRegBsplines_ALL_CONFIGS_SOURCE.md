@@ -342,7 +342,7 @@ metric->SetComputeMetricOverlap(METRICOVERLAP);
 --labelkappaderiv       Default: 0.0  → Label derivative weight
 --labelkappavec         Default: ""   → Per-label weights (L1:w1,L2:w2,...)
 --labelkappaderivvec    Default: ""   → Per-label derivatives
---labelsamples          Default: 0.1  → Use 10% of labeled voxels
+--labelsamples          Default: 0.1  → Fraction (0,1] of voxels OR absolute count (>1)
 --labelreport           Default: 1    → Report Dice every N iterations (0=off)
 ```
 

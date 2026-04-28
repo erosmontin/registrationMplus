@@ -173,7 +173,7 @@ Sampling:
 --fixedlabelmap seg_fixed.nii.gz \
 --movinglabelmap seg_moving.nii.gz \
 --labelkappa 1.0 \
---labelsamples 0.5
+--labelsamples 0.5            # fraction (0,1]; or pass an integer >1 for absolute count
 ```
 
 ---
