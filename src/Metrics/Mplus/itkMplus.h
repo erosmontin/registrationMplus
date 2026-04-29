@@ -13,7 +13,7 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "itkMutualInformationHistogramImageToImageMetric.h"
 #include "itkNormalizedCorrelationImageToImageMetric.h"
 #include "itkGradientDifferenceImageToImageMetric.h"
-#include "itkNormalizedMutualInformationHistogramImageToImageMetric.h"
+#include "itkNMIFromMattes.h"
 #include <map>
 #include <vector>
 
@@ -164,6 +164,17 @@ public:
 
 	itkGetMacro( OverlapPadding, unsigned int);
 	itkSetMacro( OverlapPadding, unsigned int);
+	itkGetMacro( OverlapPaddingMM, double);
+	itkSetMacro( OverlapPaddingMM, double);
+
+	/** Fraction of spatial samples drawn from *inside* the focus ROI mask
+	 *  when --focusroi is used.
+	 *  1.0 = restrict entirely to mask (original hard-mask behavior).
+	 *  0.0 = no bias (uniform sampling, mask ignored for sampling).
+	 *  0 < boost < 1 = boost*N samples inside + (1-boost)*N outside.
+	 *  Default: 0.8 */
+	itkGetMacro( FocusROISamplingBoost, double);
+	itkSetMacro( FocusROISamplingBoost, double);
 
 	/** Forward an intensity threshold to all active sub-metrics during Initialize(). */
 	void SetFixedImageThreshold(double t) { m_FixedImageThreshold = t; m_UseFixedImageThreshold = true; }
@@ -403,7 +414,7 @@ protected:
 	bool m_ComputeOverlap;
 	bool m_NGFPrecomputeGradient;
 	unsigned int m_OverlapPadding;
-	double m_FixedImageThreshold;
+	double       m_OverlapPaddingMM;	double       m_FocusROISamplingBoost;	double m_FixedImageThreshold;
 	bool   m_UseFixedImageThreshold;
 
 	/** Cached per-metric derivative-norm scale factors (set in GetDerivative mode 2,
@@ -464,7 +475,7 @@ protected:
 	typedef MeanSquaresImageToImageMetric<FixedImageType,MovingImageType> MSEType;
 	typedef NormalizedCorrelationImageToImageMetric<FixedImageType,MovingImageType>    NCType;
 	typedef GradientDifferenceImageToImageMetric<FixedImageType,MovingImageType>       GDType;
-	typedef NormalizedMutualInformationHistogramImageToImageMetric<FixedImageType,MovingImageType> NMIType;
+	typedef NMIFromMattesMetric<FixedImageType,MovingImageType> NMIType;
 
 
 
@@ -512,6 +523,15 @@ private:
 
 	// ── label metric private helpers ──────────────────────────────────────────
 	void InitializeLabelMetric();
+
+	/** Build and apply a biased sample index list to a Mattes-based sub-metric.
+	 *  insideFraction of nSamples are drawn from inside the fixed image mask;
+	 *  the remainder from outside.  Only metrics derived from
+	 *  MattesMutualInformationImageToImageMetric support SetUseFixedImageIndexes(). */
+	typedef MattesMutualInformationImageToImageMetric<FixedImageType, MovingImageType> MattesBaseType;
+	void BuildBiasedSampleList(MattesBaseType* subMetric,
+	                           unsigned int nSamples,
+	                           double insideFraction);
 
 	/** Build a float binary image (1.0 where label==L, 0.0 elsewhere) on the
 	 *  coordinate grid of @p refSpacing / @p refOrigin / @p refDirection. */

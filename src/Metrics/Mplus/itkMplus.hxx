@@ -25,6 +25,7 @@
 #include "itkImageRegionConstIteratorWithIndex.h"
 #include <set>
 #include <iterator>
+#include <random>
 // >>>
 
 namespace itk
@@ -74,7 +75,9 @@ namespace itk
 		m_RangeDerivatives=0.0;
 		m_NGFPrecomputeGradient = false;
 		m_ComputeOverlap   = true;    // default: compute overlap
-		m_OverlapPadding   = 20;
+		m_OverlapPadding   = 0;
+		m_OverlapPaddingMM = 0.0;
+		m_FocusROISamplingBoost = 0.8;
 		m_FixedImageThreshold   = 0.0;
 		m_UseFixedImageThreshold = false;
 
@@ -121,6 +124,66 @@ namespace itk
 
 	template <class TFixedImage, class TMovingImage>
 	Mplus<TFixedImage, TMovingImage>::~Mplus() {}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// BuildBiasedSampleList
+	// Only called for Mattes-based sub-metrics (MA and NMI) — the only ones in
+	// this ITK version that support SetFixedImageIndexes() / SetUseFixedImageIndexes().
+	// ─────────────────────────────────────────────────────────────────────────
+	template <class TFixedImage, class TMovingImage>
+	void
+	Mplus<TFixedImage, TMovingImage>::BuildBiasedSampleList(
+	    MattesBaseType* subMetric,
+	    unsigned int nSamples,
+	    double insideFraction)
+	{
+		using IndexType = typename TFixedImage::IndexType;
+		using PointType = typename TFixedImage::PointType;
+
+		const auto* mask = this->GetFixedImageMask();
+		const TFixedImage* fixedImage = this->m_FixedImage;
+
+		std::vector<IndexType> insideIdx, outsideIdx;
+		const unsigned long totalPix = fixedImage->GetBufferedRegion().GetNumberOfPixels();
+		insideIdx.reserve(totalPix / 4);
+		outsideIdx.reserve(totalPix);
+
+		itk::ImageRegionConstIteratorWithIndex<TFixedImage> it(
+		    fixedImage, fixedImage->GetBufferedRegion());
+		for (; !it.IsAtEnd(); ++it)
+		{
+			PointType pt;
+			fixedImage->TransformIndexToPhysicalPoint(it.GetIndex(), pt);
+			if (mask->IsInside(pt))
+				insideIdx.push_back(it.GetIndex());
+			else
+				outsideIdx.push_back(it.GetIndex());
+		}
+
+		const unsigned int nInside  = static_cast<unsigned int>(std::round(nSamples * insideFraction));
+		const unsigned int nOutside = (nSamples > nInside) ? nSamples - nInside : 0;
+		const unsigned int actualInside  = std::min(nInside,  static_cast<unsigned int>(insideIdx.size()));
+		const unsigned int actualOutside = std::min(nOutside, static_cast<unsigned int>(outsideIdx.size()));
+
+		// Shuffle both pools with a fixed seed for reproducibility
+		std::mt19937 rng(42u);
+		std::shuffle(insideIdx.begin(), insideIdx.end(), rng);
+		std::shuffle(outsideIdx.begin(), outsideIdx.end(), rng);
+
+		std::vector<IndexType> combined;
+		combined.reserve(actualInside + actualOutside);
+		combined.insert(combined.end(), insideIdx.begin(),  insideIdx.begin()  + actualInside);
+		combined.insert(combined.end(), outsideIdx.begin(), outsideIdx.begin() + actualOutside);
+		// Final shuffle so inside/outside indices are interleaved
+		std::shuffle(combined.begin(), combined.end(), rng);
+
+		subMetric->SetFixedImageIndexes(combined);
+		subMetric->SetUseFixedImageIndexes(true);
+
+		std::cout << "[FocusROI] Biased sampling: " << actualInside << " inside + "
+		          << actualOutside << " outside = " << combined.size()
+		          << " total (boost=" << insideFraction << ")" << std::endl;
+	}
 
 	/**
 	 * Initialize
@@ -240,6 +303,13 @@ namespace itk
 
 		if (this->m_UseFixedImageThreshold)
 			m_MA->SetFixedImageSamplesIntensityThreshold(this->m_FixedImageThreshold);
+		if (this->GetFixedImageMask())
+		{
+			if (m_FocusROISamplingBoost >= 1.0 - 1e-6)
+				m_MA->SetFixedImageMask(this->GetFixedImageMask());  // hard exclude
+			else
+				this->BuildBiasedSampleList(m_MA.GetPointer(), this->m_MANumberOfSamples, m_FocusROISamplingBoost);
+		}
 		m_MA->ReinitializeSeed();
 		m_MA->Initialize();
 		}
@@ -258,6 +328,9 @@ namespace itk
 			m_MSE->SetNumberOfSpatialSamples(this->m_MSENumberOfSamples);
 			if (this->m_UseFixedImageThreshold)
 				m_MSE->SetFixedImageSamplesIntensityThreshold(this->m_FixedImageThreshold);
+			// MSE does not support SetFixedImageIndexes — always use hard mask
+			if (this->GetFixedImageMask())
+				m_MSE->SetFixedImageMask(this->GetFixedImageMask());
 			m_MSE->ReinitializeSeed();
 			m_MSE->Initialize();
 
@@ -289,6 +362,9 @@ namespace itk
 			m_NC->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
 			if (this->m_UseFixedImageThreshold)
 				m_NC->SetFixedImageSamplesIntensityThreshold(this->m_FixedImageThreshold);
+			// NC does not support SetFixedImageIndexes — always use hard mask
+			if (this->GetFixedImageMask())
+				m_NC->SetFixedImageMask(this->GetFixedImageMask());
 			m_NC->Initialize();
 
 			// Safety: NC divides by moving-image std-dev.  If the moving image is
@@ -370,11 +446,21 @@ namespace itk
 			m_NMI->SetInterpolator(nmiInterp);
 			m_NMI->SetFixedImageRegion(overlap);
 			m_NMI->SetNumberOfThreads(this->GetNumberOfThreads());
-			m_NMI->SetUseCachingOfBSplineWeights(false);
-			// Histogram size: [bins_fixed, bins_moving]
-			typename NMIType::HistogramType::SizeType histSize(2);
-			histSize.Fill(static_cast<typename NMIType::HistogramType::SizeType::ValueType>(this->m_NMIBinNumbers));
-			m_NMI->SetHistogramSize(histSize);
+			m_NMI->SetUseCachingOfBSplineWeights(this->m_UseCachingOfBSplineWeights);
+			// Always use explicit PDF derivatives: our analytical NMI derivative
+			// reads GetJointPDFDerivatives() which is only populated in explicit mode.
+			m_NMI->SetUseExplicitPDFDerivatives(true);
+			m_NMI->SetNumberOfHistogramBins(this->m_NMIBinNumbers);
+			m_NMI->SetNumberOfSpatialSamples(this->m_NMINumberOfSamples);
+			m_NMI->UseAllPixelsOff();
+			if (this->GetFixedImageMask())
+			{
+				if (m_FocusROISamplingBoost >= 1.0 - 1e-6)
+					m_NMI->SetFixedImageMask(this->GetFixedImageMask());  // hard exclude
+				else
+					this->BuildBiasedSampleList(m_NMI.GetPointer(), this->m_NMINumberOfSamples, m_FocusROISamplingBoost);
+			}
+			m_NMI->ReinitializeSeed();
 			m_NMI->Initialize();
 		}
 		// add a resampling filter to the NGF metric
@@ -895,22 +981,8 @@ namespace itk
 
 		DerivativeType g;
 		g = parameters;
-		// NMI derivative: see GetValueAndDerivative — finite-difference NMI
-		// derivative is infeasible and unstable for B-spline transforms.
-		// Skip with a one-shot warning so NMI contributes value-only.
 		if (this->m_SigmaDerivative != 0.0)
-		{
-			static bool warned = false;
-			if (!warned)
-			{
-				std::cout << "[Mplus] WARNING: NMI derivative requested but skipped "
-				             "(finite-difference NMI derivative is infeasible and "
-				             "unstable for B-spline transforms; NMI contributes to "
-				             "the value only)." << std::endl;
-				warned = true;
-			}
-			g.Fill(0.0);
-		}
+			this->GetNMIDerivative(parameters, g);
 		else
 			g.Fill(0.0);
 
@@ -1270,31 +1342,15 @@ namespace itk
 		}
 
 		// NMI (Normalized Mutual Information).
-		//
-		// HistogramImageToImageMetric::GetDerivative uses central finite
-		// differences: for each of N parameters it perturbs the SHARED transform,
-		// recomputes the full histogram, and restores the parameters.  For a
-		// B-spline transform with thousands of parameters this is both
-		// computationally infeasible (hours per evaluation) and crash-prone
-		// because the shared-transform parameter perturbations corrupt state
-		// observed by the other (multi-threaded) sub-metrics on the next call.
-		// We therefore evaluate NMI as a VALUE-ONLY term in B-spline mode and
-		// leave its derivative contribution at zero, even when SigmaDerivative
-		// is set.  A one-shot warning is emitted so users know.
-		if (this->m_Sigma != 0.0)
-			rawValG = m_NMI->GetValue(parameters);
-		if (this->m_SigmaDerivative != 0.0)
+		// NMIFromMattesMetric provides analytical derivatives (via the Mattes
+		// joint PDF and its derivatives), so we can use GetValueAndDerivative
+		// directly — no finite differences, no shared-transform perturbation.
+		if (this->m_Sigma != 0.0 || this->m_SigmaDerivative != 0.0)
 		{
-			static bool warned = false;
-			if (!warned)
-			{
-				std::cout << "[Mplus] WARNING: NMI derivative requested but skipped "
-				             "(finite-difference NMI derivative is infeasible and "
-				             "unstable for B-spline transforms; NMI contributes to "
-				             "the value only)." << std::endl;
-				warned = true;
-			}
-			rawDerG.Fill(0.0);
+			if (this->m_SigmaDerivative != 0.0)
+				m_NMI->GetValueAndDerivative(parameters, rawValG, rawDerG);
+			else
+				rawValG = m_NMI->GetValue(parameters);
 		}
 
 		// ── Cache weighted per-sub-metric contributions ───────────────────
@@ -1786,6 +1842,19 @@ namespace itk
 	        long long countF = 0, countM = 0, countIntersect = 0;
 	        unsigned int n = 0; SizeValueType pixIdx = 0;
 
+	        // Focus ROI: pre-build a fast mask check if boost < 1.0
+	        const auto* focusMask = this->GetFixedImageMask();
+	        const bool useFocusMask = (focusMask != nullptr);
+	        const double boost = m_FocusROISamplingBoost;
+	        // When boost < 1: accept outside voxels with probability (1-boost)
+	        // using a deterministic modulo pattern (no random state needed).
+	        // insideFraction=boost → accept every 1-in-k outside voxels where
+	        // k = round(boost / (1-boost)).
+	        const unsigned int outsideStride = (useFocusMask && boost < 1.0 - 1e-6 && boost > 1e-6)
+	            ? std::max(1u, static_cast<unsigned int>(std::round(boost / (1.0 - boost))))
+	            : 1u;
+	        unsigned int outsideCount = 0;
+
 	        itk::ImageRegionConstIteratorWithIndex<TFixedImage> it(
 	            fixedDistMap, fixedDistMap->GetLargestPossibleRegion());
 
@@ -1795,6 +1864,22 @@ namespace itk
 
 	            typename TFixedImage::PointType fixedPt;
 	            fixedDistMap->TransformIndexToPhysicalPoint(it.GetIndex(), fixedPt);
+
+	            // Focus ROI sampling: always accept inside-mask voxels;
+	            // accept outside voxels only every outsideStride steps.
+	            if (useFocusMask)
+	            {
+	                if (focusMask->IsInside(fixedPt))
+	                {
+	                    // always accept
+	                }
+	                else
+	                {
+	                    if (boost >= 1.0 - 1e-6) { continue; }  // hard exclude
+	                    if ((++outsideCount % outsideStride) != 0) { continue; }
+	                }
+	            }
+
 	            const auto movingPt = this->m_Transform->TransformPoint(fixedPt);
 
 	            if (!movingDistInterp->IsInsideBuffer(movingPt)) continue;
@@ -1814,17 +1899,13 @@ namespace itk
 	            sumSqDiff += loss;
 	            ++n;
 
-	            // Also accumulate binary Dice stats (dFixed<0 → inside label)
+	            // Accumulate binary Dice stats (dFixed<0 → inside label)
 	            bool inF = (dFixedRaw  <= 0.0);
 	            bool inM = (dMovingRaw <= 0.0);
 	            if (inF) ++countF;
 	            if (inM) ++countM;
 	            if (inF && inM) ++countIntersect;
 	        }
-
-	        if (n == 0) continue;
-
-	        totalValue += kappaL * sumSqDiff / static_cast<double>(n);
 
 	        // Cache Dice for monitoring
 	        double dice = 0.0;
@@ -1880,6 +1961,15 @@ namespace itk
 	        std::vector<double> localDeriv(nParams, 0.0);
 	        unsigned int n = 0; SizeValueType pixIdx = 0;
 
+	        // Focus ROI sampling (same logic as GetKappaValue)
+	        const auto* focusMask = this->GetFixedImageMask();
+	        const bool useFocusMask = (focusMask != nullptr);
+	        const double boost = m_FocusROISamplingBoost;
+	        const unsigned int outsideStride = (useFocusMask && boost < 1.0 - 1e-6 && boost > 1e-6)
+	            ? std::max(1u, static_cast<unsigned int>(std::round(boost / (1.0 - boost))))
+	            : 1u;
+	        unsigned int outsideCount = 0;
+
 	        itk::ImageRegionConstIteratorWithIndex<TFixedImage> it(
 	            fixedDistMap, fixedDistMap->GetLargestPossibleRegion());
 
@@ -1889,6 +1979,20 @@ namespace itk
 
 	            typename TFixedImage::PointType fixedPt;
 	            fixedDistMap->TransformIndexToPhysicalPoint(it.GetIndex(), fixedPt);
+
+	            if (useFocusMask)
+	            {
+	                if (focusMask->IsInside(fixedPt))
+	                {
+	                    // always accept
+	                }
+	                else
+	                {
+	                    if (boost >= 1.0 - 1e-6) { continue; }
+	                    if ((++outsideCount % outsideStride) != 0) { continue; }
+	                }
+	            }
+
 	            const auto movingPt = this->m_Transform->TransformPoint(fixedPt);
 
 	            if (!movingDistInterp->IsInsideBuffer(movingPt) ||

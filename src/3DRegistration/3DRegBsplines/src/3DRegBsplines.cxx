@@ -138,8 +138,9 @@ int main(int argc, char *argv[])
     ("ngfspacing", po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
     ("workingresolution", po::value<std::string>()->default_value("0,0,0"),
        "Internal registration spacing in mm (x,y,z). Use 0,0,0 to keep the input spacing.")
-    ("meshmarginsize", po::value<double>()->default_value(0.0), "Margin (mm) to extend mesh domain")
-	("metricoverlap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
+    ("grid-margin-mm", po::value<double>()->default_value(0.0),
+       "Extra margin in mm to extend the B-spline grid domain beyond the image boundary (default 0.0)")
+	("metric-overlap", po::value<bool>()->default_value(true), "Restrict metric evaluation to the overlapping region of fixed and moving image (default true)")
 	("fixedlabelmap",  po::value<std::string>()->default_value("N"), "Fixed label map filename (N = none)")
 	("movinglabelmap", po::value<std::string>()->default_value("N"), "Moving label map filename (N = none)")
 	("labelkappa",     po::value<double>()->default_value(0.0),       "Global kappa weight for label-map distance metric (0 = off)")
@@ -163,10 +164,17 @@ int main(int argc, char *argv[])
 	("snapshotspacing",po::value<double>()->default_value(0.0),       "Absolute snapshot pixel spacing in mm (>0). Overrides --snapshotscale. e.g. 0.25 = render PNGs at 0.25 mm/pixel even if working grid is 2 mm.")
 	("snapshotinterp", po::value<int>()->default_value(1),            "Snapshot resampling interpolator: 0=linear (fast), 1=cubic B-spline (smoother, recommended for upsampling)")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(5),
-		"Number of B-spline control points outside the image domain per side "
-		"(min = spline order = 3, recommended >= 5 for B-splines). Higher values give more deformation support at image borders.")
-	("metricpadding", po::value<unsigned int>()->default_value(0), "Metric overlap padding in voxels (default 20)")
+	("grid-border-knots", po::value<unsigned int>()->default_value(5),
+		"Number of B-spline control points extending beyond the image domain on each side "
+		"(minimum = spline order = 3, recommended >= 5). Higher values give more deformation support near image borders.")
+	("metric-padding-mm", po::value<double>()->default_value(0.0), "Shrink the metric overlap region by this amount in mm on each side (default 0.0)")
+	("focusroi", po::value<std::string>()->default_value("N"),
+	 "Focus ROI mask image (N = none). Non-zero voxels define the region where metric samples are drawn."
+	 " Concentrates all sampling budget inside the structure of interest.")
+	("focusboost", po::value<double>()->default_value(0.8),
+	 "Fraction of samples drawn from inside the --focusroi mask (0.0-1.0). "
+	 "1.0 = restrict entirely to mask; 0.8 (default) = 80% inside + 20% outside; "
+	 "0.0 = uniform sampling (mask ignored).")
 	("modality", po::value<std::string>()->default_value("custom"),
 		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
 
@@ -436,7 +444,7 @@ int main(int argc, char *argv[])
 	double SIGMA           = vm["sigma"].as<double>();
 	double SIGMADERIVATIVE = vm["sigmaderivative"].as<double>();
 	int    NMIBINS         = vm["nmibins"].as<int>();
-	bool METRICOVERLAP = vm["metricoverlap"].as<bool>();
+	bool METRICOVERLAP = vm["metric-overlap"].as<bool>();
 	int  DERIVMODE = vm["derivativemode"].as<int>();
 	int  MAINMETRIC = vm["mainmetric"].as<int>();
 	if (DERIVMODE == 1) {
@@ -444,7 +452,7 @@ int main(int argc, char *argv[])
 		             "LBFGS-B optimizer used by B-splines. Use 0 or 2." << std::endl;
 		return EXIT_FAILURE;
 	}
-	double meshMargin = vm["meshmarginsize"].as<double>();
+	double meshMargin = vm["grid-margin-mm"].as<double>();
 
 	// ── label map options ───────────────────────────────────────────────────────
 	const std::string FIXEDLABELMAP   = vm["fixedlabelmap"].as<std::string>();
@@ -470,6 +478,28 @@ int main(int argc, char *argv[])
 
 	const auto LABELKAPPAVEC      = RegCommon::ParseLabelWeights(vm["labelkappavec"].as<std::string>());
 	const auto LABELKAPPADERIVVEC = RegCommon::ParseLabelWeights(vm["labelkappaderivvec"].as<std::string>());
+
+	// ── focus ROI mask ─────────────────────────────────────────────────────────
+	const std::string FOCUSROI   = vm["focusroi"].as<std::string>();
+	const double      FOCUSBOOST = vm["focusboost"].as<double>();
+	if (FOCUSROI != "N" && !FOCUSROI.empty())
+	{
+		typedef itk::ImageFileReader<itk::Image<unsigned char, ImageDimension>> MaskReaderType;
+		MaskReaderType::Pointer maskReader = MaskReaderType::New();
+		maskReader->SetFileName(FOCUSROI);
+		maskReader->Update();
+		typedef itk::ImageMaskSpatialObject<ImageDimension> MaskSpatialObjectType;
+		MaskSpatialObjectType::Pointer maskSO = MaskSpatialObjectType::New();
+		maskSO->SetImage(maskReader->GetOutput());
+		maskSO->Update();
+		metric->SetFixedImageMask(maskSO);
+		metric->SetFocusROISamplingBoost(FOCUSBOOST);
+		if (FOCUSBOOST >= 1.0 - 1e-6)
+			std::cout << "[FocusROI] Hard mask (samples only inside): " << FOCUSROI << std::endl;
+		else
+			std::cout << "[FocusROI] Biased sampling boost=" << FOCUSBOOST
+			          << " (" << static_cast<int>(FOCUSBOOST*100) << "% inside): " << FOCUSROI << std::endl;
+	}
 
 	// Read label maps
 	typedef itk::Image<short, ImageDimension> LabelImageType;
@@ -698,19 +728,27 @@ int main(int argc, char *argv[])
 	// ---------------------------------------------------------------
 
 	const unsigned int borderNodesPerSide =
-		vm["overlappadding"].as<unsigned int>();
-	const double extension = borderNodesPerSide * GRIDRESOLUTION;
+		vm["grid-border-knots"].as<unsigned int>();
 
-	// 1) Physical dimensions & mesh size per parametric axis
+	// 1) Physical dimensions & mesh size per parametric axis.
+	// Derive the knot count directly so that exactly borderNodesPerSide knots
+	// land outside the image/gridposition domain on each side.
+	// Previous approach (extend by mm then floor-divide) gave an approximate and
+	// image-extent-dependent knot count; this guarantees the exact requested count.
 	for (unsigned int i = 0; i < SpaceDimension; ++i)
 	{
-		fixedPhysicalDimensions[i] =
-			meshspacing[i] * (meshsize[i] - 1)
-			+ 2.0 * meshMargin
-			+ 2.0 * extension;
+		// Physical extent of the domain to cover (image + optional margin)
+		const double domainExtent = meshspacing[i] * (meshsize[i] - 1) + 2.0 * meshMargin;
 
-		const unsigned int totalGridNodes =
-			static_cast<unsigned int>(fixedPhysicalDimensions[i] / GRIDRESOLUTION) + 1;
+		// Minimum knots needed to fully span domainExtent at GRIDRESOLUTION spacing
+		const unsigned int imageKnots =
+			static_cast<unsigned int>(std::ceil(domainExtent / GRIDRESOLUTION)) + 1;
+
+		// Exact total knots: image coverage + requested border on each side
+		const unsigned int totalGridNodes = imageKnots + 2 * borderNodesPerSide;
+
+		// Physical dimensions derived from the knot count (not the other way around)
+		fixedPhysicalDimensions[i] = (totalGridNodes - 1) * GRIDRESOLUTION;
 
 		meshSize[i] = totalGridNodes > SplineOrder
 					? totalGridNodes - SplineOrder
@@ -775,26 +813,21 @@ int main(int argc, char *argv[])
 	const unsigned int numberOfPixels = fixedImage->GetLargestPossibleRegion().GetNumberOfPixels();
 
 	// Convert sampling fractions to absolute sample counts.
-	// Hard-cap MA/NGF/NC to prevent OOM: with BSpline weight caching each metric
-	// allocates nSamples × 64 × 8 bytes.  At 200k samples that is ~100 MB each —
-	// safe even on 4 GB GPUs.  MSE/GD/NMI do not use the weight cache.
-	constexpr unsigned int kMaxSamplesMA  = 200000;
-	constexpr unsigned int kMaxSamplesNGF = 100000;
-	constexpr unsigned int kMaxSamplesNC  = 100000;
-	const unsigned int numberOfSamplesMA = std::min(
-	    kMaxSamplesMA,
-	    static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent));
-	const unsigned int numberOfSamplesNGF = std::min(
-	    kMaxSamplesNGF,
-	    static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent));
+	// No hard caps: the requested percentage is applied directly to the voxel count.
+	// Note: with BSpline weight caching enabled, large sample counts (>200k) will
+	// increase memory proportionally (nSamples × nBins × 8 bytes per metric).
+	const unsigned int numberOfSamplesMA  = static_cast<unsigned int>(numberOfPixels * metricsConfig.mi.samplingPercent);
+	const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent);
 	const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * metricsConfig.mse.samplingPercent);
-	const unsigned int numberOfSamplesNC = std::min(
-	    kMaxSamplesNC,
-	    static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent));
+	const unsigned int numberOfSamplesNC  = static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent);
+	const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * metricsConfig.nmi.samplingPercent);
+	const unsigned int numberOfSamplesGD  = static_cast<unsigned int>(numberOfPixels * metricsConfig.gd.samplingPercent);
 	const unsigned int numberOfSamplesLabel = RegCommon::ResolveLabelSampleCount(LABELSAMPLES, numberOfPixels);
 	std::cout << "[Samples] MA=" << numberOfSamplesMA
 	          << " NGF=" << numberOfSamplesNGF
 	          << " NC=" << numberOfSamplesNC
+	          << " NMI=" << numberOfSamplesNMI
+	          << " GD=" << numberOfSamplesGD
 	          << " Label=" << numberOfSamplesLabel
 	          << "  (fixed image voxels=" << numberOfPixels << ")" << std::endl;
 
@@ -804,7 +837,7 @@ int main(int argc, char *argv[])
 	metric->SetDerivativeMode(DERIVMODE);
 	metric->SetMainMetricIndex(MAINMETRIC);
 	metric->SetComputeOverlap(METRICOVERLAP);
-	metric->SetOverlapPadding(vm["metricpadding"].as<unsigned int>());
+	metric->SetOverlapPaddingMM(vm["metric-padding-mm"].as<double>());
 	metric->SetAlpha(metricsConfig.mi.weight);
 	metric->SetAlphaDerivative(metricsConfig.mi.derivative);
 	metric->SetMANumberOfSamples(numberOfSamplesMA);
@@ -833,10 +866,12 @@ int main(int argc, char *argv[])
 
 	metric->SetRho(metricsConfig.gd.weight);
 	metric->SetRhoDerivative(metricsConfig.gd.derivative);
+	metric->SetGDNumberOfSamples(numberOfSamplesGD);
 
 	metric->SetSigma(metricsConfig.nmi.weight);
 	metric->SetSigmaDerivative(metricsConfig.nmi.derivative);
 	metric->SetNMIBinNumbers(NMIBINS);
+	metric->SetNMINumberOfSamples(numberOfSamplesNMI);
 
 
 	if (TR != -99999999)

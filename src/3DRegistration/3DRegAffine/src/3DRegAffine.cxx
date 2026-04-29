@@ -141,7 +141,7 @@ int main( int argc, char *argv[] )
         ("ngfspacing",      po::value<std::string>()->default_value("4,4,4"), "NGF spacing per dimension (x,y,z)")
         ("workingresolution", po::value<std::string>()->default_value("0,0,0"),
             "Internal registration spacing in mm (x,y,z). Use 0,0,0 to keep the input spacing.")
-	("metricoverlap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
+	("metric-overlap", po::value<bool>()->default_value(true), "Restrict metric evaluation to the overlapping region of fixed and moving image (default true)")
 	("fixedlabelmap",  po::value<std::string>()->default_value("N"), "Fixed label map filename (N = none)")
 	("movinglabelmap", po::value<std::string>()->default_value("N"), "Moving label map filename (N = none)")
 	("labelkappa",     po::value<double>()->default_value(0.0),       "Global kappa weight for label-map distance metric (0 = off)")
@@ -165,7 +165,7 @@ int main( int argc, char *argv[] )
 	("snapshotspacing",po::value<double>()->default_value(0.0),       "Absolute snapshot pixel spacing in mm (>0). Overrides --snapshotscale. e.g. 0.25 = render PNGs at 0.25 mm/pixel even if working grid is 2 mm.")
 	("snapshotinterp", po::value<int>()->default_value(1),            "Snapshot resampling interpolator: 0=linear (fast), 1=cubic B-spline (smoother, recommended for upsampling)")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
+	("metric-padding-voxels", po::value<unsigned int>()->default_value(20), "Shrink the metric overlap region by this amount in voxels on each side (default 20)")
 	("modality", po::value<std::string>()->default_value("custom"),
 		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
  ;
@@ -302,7 +302,7 @@ int main( int argc, char *argv[] )
 
 	int  DERIVMODE = vm["derivativemode"].as<int>();
 	int  MAINMETRIC = vm["mainmetric"].as<int>();
-	bool METRICOVERLAP = vm["metricoverlap"].as<bool>();
+	bool METRICOVERLAP = vm["metric-overlap"].as<bool>();
 
 	// Label I/O now uses shared utility
 	typedef itk::Image<short, ImageDimension> LabelImageType;
@@ -588,7 +588,7 @@ if (method == "translation") {
 	metric->SetDerivativeMode(DERIVMODE);
 	metric->SetMainMetricIndex(MAINMETRIC);
 	metric->SetComputeOverlap(METRICOVERLAP);
-	metric->SetOverlapPadding(vm["overlappadding"].as<unsigned int>());
+	metric->SetOverlapPadding(vm["metric-padding-voxels"].as<unsigned int>());
 
 	metric->SetAlpha(metricsConfig.mi.weight);
 	metric->SetAlphaDerivative(metricsConfig.mi.derivative);

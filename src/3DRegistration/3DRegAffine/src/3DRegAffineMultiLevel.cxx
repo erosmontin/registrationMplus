@@ -145,7 +145,7 @@ int main( int argc, char *argv[] )
         ("workingresolution", po::value<std::string>()->default_value("0,0,0"),
             "Internal registration spacing in mm (x,y,z). Use 0,0,0 to keep the input spacing.")
         ("ngfprecompute", po::value<bool>()->default_value(false), "Precompute moving-image NGF once and resample vector field each iteration (faster, approximate)")
-	("metricoverlap", po::value<bool>()->default_value(true), "Compute overlap between fixed and moving image (default true)")
+	("metric-overlap", po::value<bool>()->default_value(true), "Restrict metric evaluation to the overlapping region of fixed and moving image (default true)")
 	("fixedlabelmap",  po::value<std::string>()->default_value("N"), "Fixed label map filename (N = none)")
 	("movinglabelmap", po::value<std::string>()->default_value("N"), "Moving label map filename (N = none)")
 	("labelkappa",     po::value<double>()->default_value(0.0),       "Global kappa weight for label-map distance metric (0 = off)")
@@ -169,7 +169,7 @@ int main( int argc, char *argv[] )
 	("snapshotspacing",po::value<double>()->default_value(0.0),       "Absolute snapshot pixel spacing in mm (>0). Overrides --snapshotscale. e.g. 0.25 = render PNGs at 0.25 mm/pixel even if working grid is 2 mm.")
 	("snapshotinterp", po::value<int>()->default_value(1),            "Snapshot resampling interpolator: 0=linear (fast), 1=cubic B-spline (smoother, recommended for upsampling)")
 	("version", "Print version and exit")
-	("overlappadding", po::value<unsigned int>()->default_value(20), "Overlap padding in voxels")
+	("metric-padding-voxels", po::value<unsigned int>()->default_value(20), "Shrink the metric overlap region by this amount in voxels on each side (default 20)")
 	("modality", po::value<std::string>()->default_value("custom"),
 		"Preset modality: 'multimodal' (MI+NGF), 'singlemodal' (MSE+NC), or 'custom' (manual weights)")
     ;
@@ -626,8 +626,7 @@ if (method == "translation") {
 	const unsigned int numberOfSamplesMA =static_cast< unsigned int >( numberOfPixels * metricsConfig.mi.samplingPercent );
     const unsigned int numberOfSamplesMSE = static_cast<unsigned int>(numberOfPixels * metricsConfig.mse.samplingPercent);
     const unsigned int numberOfSamplesNGF = static_cast<unsigned int>(numberOfPixels * metricsConfig.ngf.samplingPercent);
-    // const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * NMIPERCENTAGE);
-    // const unsigned int numberOfSamplesHMI = static_cast<unsigned int>(numberOfPixels * MIPERCENTAGE);
+    const unsigned int numberOfSamplesNMI = static_cast<unsigned int>(numberOfPixels * metricsConfig.nmi.samplingPercent);
     const unsigned int numberOfSamplesNC  = static_cast<unsigned int>(numberOfPixels * metricsConfig.nc.samplingPercent);
     const unsigned int numberOfSamplesLabel = RegCommon::ResolveLabelSampleCount(LABELSAMPLES, numberOfPixels);
 
@@ -646,15 +645,16 @@ if (method == "translation") {
 	metric->SetNGFNumberOfSamples(numberOfSamplesNGF);
 	metric->SetDerivativeMode(DERIVMODE);
 	metric->SetMainMetricIndex(MAINMETRIC);
-	metric->SetComputeOverlap(vm["metricoverlap"].as<bool>());
-	metric->SetOverlapPadding(vm["overlappadding"].as<unsigned int>());
+	metric->SetComputeOverlap(vm["metric-overlap"].as<bool>());
+	metric->SetOverlapPadding(vm["metric-padding-voxels"].as<unsigned int>());
 	metric->SetNumberOfThreads(NT);
 	metric->SetYota(metricsConfig.nc.weight);
 	metric->SetYotaDerivative(metricsConfig.nc.derivative);
-    // metric->SetNMINumberOfSamples(numberOfSamplesNMI);  // NMI not yet implemented in Mplus
+    metric->SetNMINumberOfSamples(numberOfSamplesNMI);
     metric->SetNCNumberOfSamples(numberOfSamplesNC);
     metric->SetRho(metricsConfig.gd.weight);
     metric->SetRhoDerivative(metricsConfig.gd.derivative);
+    metric->SetGDNumberOfSamples(static_cast<unsigned int>(numberOfPixels * metricsConfig.gd.samplingPercent));
     metric->SetSigma(metricsConfig.nmi.weight);
     metric->SetSigmaDerivative(metricsConfig.nmi.derivative);
     metric->SetNMIBinNumbers(NMIBINS);

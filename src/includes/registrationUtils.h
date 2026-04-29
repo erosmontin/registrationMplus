@@ -1419,10 +1419,12 @@ private:
             itk::Point<double, 3> physPt;
             coeffImg->TransformIndexToPhysicalPoint(idx3, physPt);
 
-            // Add the raw displacement coefficient
-            itk::Point<double, 3> displaced;
-            for (unsigned d = 0; d < 3; ++d)
-                displaced[d] = physPt[d] + coeffImages[d]->GetPixel(idx3);
+            // Evaluate the actual B-spline transform at this node position.
+            // Using raw coefficients directly would be wrong: the coefficient
+            // is NOT the displacement at the node — it is a control value
+            // blended through the cubic basis (2/3 self + 1/6 neighbours).
+            // TransformPoint() performs the correct basis-function evaluation.
+            itk::Point<double, 3> displaced = bst->TransformPoint(physPt);
 
             // Project to fixed image continuous index, scale for isotropic
             // resampling, then add canvas offset
