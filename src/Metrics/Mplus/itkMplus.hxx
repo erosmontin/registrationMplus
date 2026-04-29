@@ -12,6 +12,9 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <sstream>
+#include <string>
 // >>>
 
 // <<< label metric support
@@ -111,6 +114,7 @@ namespace itk
 		m_LastValNMI   = 0.0;
 		m_LastValLabel = 0.0;
 		m_LastValTotal = 0.0;
+		m_LastDerivativeStats.clear();
 	}
 	template <class TFixedImage, class TMovingImage>
 	void
@@ -790,6 +794,89 @@ namespace itk
 	  return std::sqrt( sumSq / static_cast<double>(N) );
 	}
 
+	template<class TFixedImage, class TMovingImage>
+	typename Mplus<TFixedImage,TMovingImage>::DerivativeStatsType
+	Mplus<TFixedImage,TMovingImage>
+	::ComputeDerivativeStats(const DerivativeType & der) const
+	{
+	  DerivativeStatsType stats;
+	  stats.mean = 0.0;
+	  stats.minimum = 0.0;
+	  stats.maximum = 0.0;
+	  stats.range = 0.0;
+	  stats.stddev = 0.0;
+	  stats.norm = 0.0;
+
+	  const auto N = der.Size();
+	  if (N == 0) return stats;
+
+	  double sum = 0.0;
+	  double sumSq = 0.0;
+	  double minVal = std::numeric_limits<double>::infinity();
+	  double maxVal = -std::numeric_limits<double>::infinity();
+
+	  for (unsigned i = 0; i < N; ++i)
+	  {
+		const double v = der[i];
+		sum += v;
+		sumSq += v * v;
+		if (v < minVal) minVal = v;
+		if (v > maxVal) maxVal = v;
+	  }
+
+	  stats.mean = sum / static_cast<double>(N);
+	  stats.minimum = minVal;
+	  stats.maximum = maxVal;
+	  stats.range = maxVal - minVal;
+	  double variance = sumSq / static_cast<double>(N) - stats.mean * stats.mean;
+	  if (variance < 0.0 && variance > -1.0e-18) variance = 0.0;
+	  stats.stddev = (variance > 0.0) ? std::sqrt(variance) : 0.0;
+	  stats.norm = std::sqrt(sumSq);
+
+	  return stats;
+	}
+
+	template<class TFixedImage, class TMovingImage>
+	void
+	Mplus<TFixedImage,TMovingImage>
+	::CacheDerivativeStats(const std::string & name, const DerivativeType & der) const
+	{
+	  this->m_LastDerivativeStats[name] = this->ComputeDerivativeStats(der);
+	}
+
+	template<class TFixedImage, class TMovingImage>
+	std::string
+	Mplus<TFixedImage,TMovingImage>
+	::GetLastDerivativeStatsString() const
+	{
+	  if (this->m_LastDerivativeStats.empty()) return std::string();
+
+	  static const char * names[] = {
+	    "MI", "NGF", "MSE", "GD", "NC", "NMI", "Label"
+	  };
+	  const unsigned int nNames =
+	    static_cast<unsigned int>(sizeof(names) / sizeof(names[0]));
+
+	  std::ostringstream os;
+	  os << "DerivStats:";
+	  bool any = false;
+	  for (unsigned int i = 0; i < nNames; ++i)
+	  {
+	    typename DerivativeStatsMapType::const_iterator it =
+	      this->m_LastDerivativeStats.find(names[i]);
+	    if (it == this->m_LastDerivativeStats.end()) continue;
+
+	    const DerivativeStatsType & s = it->second;
+	    if (any) os << " |";
+	    os << " " << names[i]
+	       << " mean=" << std::scientific << std::setprecision(3) << s.mean
+	       << " range=[" << s.minimum << "," << s.maximum << "]";
+	    any = true;
+	  }
+
+	  return any ? os.str() : std::string();
+	}
+
 	template <class TFixedImage, class TMovingImage>
 	typename Mplus<TFixedImage, TMovingImage>::MeasureType
 	Mplus<TFixedImage, TMovingImage>::GetValue(const ParametersType &parameters) const
@@ -985,6 +1072,22 @@ namespace itk
 			this->GetNMIDerivative(parameters, g);
 		else
 			g.Fill(0.0);
+
+		this->m_LastDerivativeStats.clear();
+		if (this->m_AlphaDerivative != 0.0)
+			this->CacheDerivativeStats("MI", a);
+		if (this->m_LambdaDerivative != 0.0)
+			this->CacheDerivativeStats("NGF", b);
+		if (this->m_NuDerivative != 0.0)
+			this->CacheDerivativeStats("MSE", c);
+		if (this->m_RhoDerivative != 0.0)
+			this->CacheDerivativeStats("GD", d);
+		if (this->m_YotaDerivative != 0.0 && !this->m_NCDegenerate)
+			this->CacheDerivativeStats("NC", e);
+		if (this->m_LabelKappaDerivative != 0.0 && m_FixedLabelMap && m_MovingLabelMap)
+			this->CacheDerivativeStats("Label", f);
+		if (this->m_SigmaDerivative != 0.0)
+			this->CacheDerivativeStats("NMI", g);
 
 		if (this->m_DerivativeMode == 1)
 		{
@@ -1352,6 +1455,22 @@ namespace itk
 			else
 				rawValG = m_NMI->GetValue(parameters);
 		}
+
+		this->m_LastDerivativeStats.clear();
+		if (this->m_AlphaDerivative != 0.0)
+			this->CacheDerivativeStats("MI", rawDerA);
+		if (this->m_LambdaDerivative != 0.0)
+			this->CacheDerivativeStats("NGF", rawDerB);
+		if (this->m_NuDerivative != 0.0)
+			this->CacheDerivativeStats("MSE", rawDerC);
+		if (this->m_RhoDerivative != 0.0)
+			this->CacheDerivativeStats("GD", rawDerD);
+		if (this->m_YotaDerivative != 0.0 && !this->m_NCDegenerate)
+			this->CacheDerivativeStats("NC", rawDerE);
+		if (this->m_LabelKappaDerivative != 0.0 && m_FixedLabelMap && m_MovingLabelMap)
+			this->CacheDerivativeStats("Label", rawDerF);
+		if (this->m_SigmaDerivative != 0.0)
+			this->CacheDerivativeStats("NMI", rawDerG);
 
 		// ── Cache weighted per-sub-metric contributions ───────────────────
 		this->m_LastValMI    = this->m_Alpha  * rawValA;

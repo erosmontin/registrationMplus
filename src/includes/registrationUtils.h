@@ -9,6 +9,8 @@
 #include <iostream>
 #include <functional>
 #include <fstream>
+#include <map>
+#include <string>
 
 class LBFGSBOptimizeCommandIterationUpdate : public itk::Command
 {
@@ -18,12 +20,16 @@ public:
     typedef  itk::Command             Superclass;
     typedef itk::SmartPointer<Self>   Pointer;
     itkNewMacro( Self );
+
+    void SetDerivativeStatsGetter(std::function<std::string()> fn)
+    { m_DerivativeStatsGetter = fn; }
 protected:
     LBFGSBOptimizeCommandIterationUpdate()
         : m_StartTime( Clock::now() )              // << initialize start
     {};
 private:
-    Clock::time_point m_StartTime;               // << store start
+    Clock::time_point             m_StartTime;               // << store start
+    std::function<std::string()>  m_DerivativeStatsGetter;
 public:
     typedef itk::LBFGSBOptimizer    OptimizerType;
     typedef   const OptimizerType * OptimizerPointer;
@@ -51,7 +57,16 @@ public:
                   << "  Metric: " << optimizer->GetCachedValue()
                   << "  Inf-norm proj-grad: "
                   << optimizer->GetInfinityNormOfProjectedGradient()
-                  << std::flush;
+                  ;
+
+        if (m_DerivativeStatsGetter)
+        {
+            const std::string stats = m_DerivativeStatsGetter();
+            if (!stats.empty())
+                std::cout << "  " << stats;
+        }
+
+        std::cout << std::flush;
     }
 };
 
@@ -67,6 +82,8 @@ public:
 
     itkSetMacro(ShowGradient, bool);
     itkGetMacro(ShowGradient, bool);
+    void SetDerivativeStatsGetter(std::function<std::string()> fn)
+    { m_DerivativeStatsGetter = fn; }
 
 protected:
     RegularStepGradientDescentOptimizerCommandIterationUpdate()
@@ -77,6 +94,7 @@ protected:
 private:
     bool                        m_ShowGradient;
     Clock::time_point           m_StartTime;       // << store start time
+    std::function<std::string()> m_DerivativeStatsGetter;
 
 public:
     typedef itk::RegularStepGradientDescentOptimizer    OptimizerType;
@@ -110,6 +128,13 @@ public:
         if (m_ShowGradient)
         {
             std::cout << "  Grad: " << optimizer->GetGradient();
+        }
+
+        if (m_DerivativeStatsGetter)
+        {
+            const std::string stats = m_DerivativeStatsGetter();
+            if (!stats.empty())
+                std::cout << "  " << stats;
         }
 
         std::cout << "  GradTol: " << optimizer->GetGradientMagnitudeTolerance()

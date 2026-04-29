@@ -775,6 +775,13 @@ if (method == "translation") {
   auto command = CommandType::New();
   registration->AddObserver(itk::IterationEvent(), command);
   registration->SetNumberOfLevels(NL);
+  if (vm["verbose"].as<bool>()) {
+	  RegularStepGradientDescentOptimizerCommandIterationUpdate::Pointer optimizerObserver =
+	      RegularStepGradientDescentOptimizerCommandIterationUpdate::New();
+	  optimizerObserver->SetDerivativeStatsGetter(
+	      [metric]() { return metric->GetLastDerivativeStatsString(); });
+	  optimizer->AddObserver(itk::IterationEvent(), optimizerObserver);
+  }
   // ── label Dice monitoring (attaches to the optimizer, not the multi-res registration)
   if (fixedLabelMap && movingLabelMap && LABELREPORT > 0) {
 	  auto optimizer = static_cast<OptimizerType*>(registration->GetModifiableOptimizer());

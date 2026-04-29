@@ -719,6 +719,8 @@ if (method == "translation") {
 			std::cout << "Initial transform parameters rec " << init_ << std::endl;
 
 	RegularStepGradientDescentOptimizerCommandIterationUpdate::Pointer observer = RegularStepGradientDescentOptimizerCommandIterationUpdate::New();
+	if (vm["verbose"].as<bool>())
+		observer->SetDerivativeStatsGetter([metric]() { return metric->GetLastDerivativeStatsString(); });
 	optimizer->AddObserver( itk::IterationEvent(), observer );
 	if (fixedLabelMap && movingLabelMap && LABELREPORT > 0) {
 		LabelMapDiceObserver<TransformType, LabelImageType>::Pointer lo =

@@ -52,4 +52,5 @@ endif()
 
 ADD_SUBDIRECTORY(3DRegBsplines/src)
 ADD_SUBDIRECTORY(3DRegAffine/src)
+ADD_SUBDIRECTORY(3DRegCalibrate/src)
 

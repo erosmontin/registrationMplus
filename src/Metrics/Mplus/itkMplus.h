@@ -15,6 +15,7 @@ Eta is defined as the Habe rdefinition of NGF, different by the itk implemntatio
 #include "itkGradientDifferenceImageToImageMetric.h"
 #include "itkNMIFromMattes.h"
 #include <map>
+#include <string>
 #include <vector>
 
 namespace itk
@@ -104,6 +105,18 @@ public:
 	itkGetMacro( LastValLabel, double);
 	itkGetMacro( LastValTotal, double);
 
+	struct DerivativeStatsType
+	{
+		double mean;
+		double minimum;
+		double maximum;
+		double range;
+		double stddev;
+		double norm;
+	};
+	typedef std::map<std::string, DerivativeStatsType> DerivativeStatsMapType;
+	const DerivativeStatsMapType & GetLastDerivativeStats() const { return m_LastDerivativeStats; }
+	std::string GetLastDerivativeStatsString() const;
 
 	itkGetMacro( FixedEta, double);
 	itkSetMacro( FixedEta, double);
@@ -491,6 +504,9 @@ protected:
 	/** Compute standard deviation of one derivative vector */
 	double ComputeDerivativeStdDev(const DerivativeType & der) const;
 
+	DerivativeStatsType ComputeDerivativeStats(const DerivativeType & der) const;
+	void CacheDerivativeStats(const std::string & name, const DerivativeType & der) const;
+
 	/** cached range of the *last* sub‐metric derivative */
 	mutable double m_RangeDerivatives;
 
@@ -499,6 +515,7 @@ protected:
 
 	double  ComputeDerivativeNorm(const DerivativeType & derivative) const;
 	mutable double m_LastComponentNorm;
+	mutable DerivativeStatsMapType m_LastDerivativeStats;
 
 
 

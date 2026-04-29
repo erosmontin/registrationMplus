@@ -1044,6 +1044,8 @@ int main(int argc, char *argv[])
 	std::cout << "\n B-spline transform using itkMplus,	Threads: " << metric->GetNumberOfThreads() << ", Variables: " << transform->GetNumberOfParameters() << ", Grid Nodes " << numberOfGridNodes << "\nTransform Domain meshes: " << transform->GetTransformDomainMeshSize() << "\nMontin, E., et al. A multi-metric registration strategy for the alignment of longitudinal brain images in pediatric oncology. Med Biol Eng Comput 58, 843-855 (2020). https://doi.org/10.1007/s11517-019-02109-4" << std::endl;
 
 	LBFGSBOptimizeCommandIterationUpdate::Pointer observer = LBFGSBOptimizeCommandIterationUpdate::New();
+	if (vm["verbose"].as<bool>())
+		observer->SetDerivativeStatsGetter([metric]() { return metric->GetLastDerivativeStatsString(); });
 	optimizer->AddObserver(itk::IterationEvent(), observer);
 
 	// ── label Dice monitoring ───────────────────────────────────────────────────
