@@ -108,9 +108,13 @@ public:
 	struct DerivativeStatsType
 	{
 		double mean;
+		double meanAbs;
 		double minimum;
 		double maximum;
 		double range;
+		double minimumAbs;
+		double maximumAbs;
+		double absRange;
 		double stddev;
 		double norm;
 	};

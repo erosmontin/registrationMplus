@@ -801,9 +801,13 @@ namespace itk
 	{
 	  DerivativeStatsType stats;
 	  stats.mean = 0.0;
+	  stats.meanAbs = 0.0;
 	  stats.minimum = 0.0;
 	  stats.maximum = 0.0;
 	  stats.range = 0.0;
+	  stats.minimumAbs = 0.0;
+	  stats.maximumAbs = 0.0;
+	  stats.absRange = 0.0;
 	  stats.stddev = 0.0;
 	  stats.norm = 0.0;
 
@@ -811,23 +815,34 @@ namespace itk
 	  if (N == 0) return stats;
 
 	  double sum = 0.0;
+	  double sumAbs = 0.0;
 	  double sumSq = 0.0;
 	  double minVal = std::numeric_limits<double>::infinity();
 	  double maxVal = -std::numeric_limits<double>::infinity();
+	  double minAbs = std::numeric_limits<double>::infinity();
+	  double maxAbs = -std::numeric_limits<double>::infinity();
 
 	  for (unsigned i = 0; i < N; ++i)
 	  {
 		const double v = der[i];
+		const double av = std::fabs(v);
 		sum += v;
+		sumAbs += av;
 		sumSq += v * v;
 		if (v < minVal) minVal = v;
 		if (v > maxVal) maxVal = v;
+		if (av < minAbs) minAbs = av;
+		if (av > maxAbs) maxAbs = av;
 	  }
 
 	  stats.mean = sum / static_cast<double>(N);
+	  stats.meanAbs = sumAbs / static_cast<double>(N);
 	  stats.minimum = minVal;
 	  stats.maximum = maxVal;
 	  stats.range = maxVal - minVal;
+	  stats.minimumAbs = minAbs;
+	  stats.maximumAbs = maxAbs;
+	  stats.absRange = maxAbs - minAbs;
 	  double variance = sumSq / static_cast<double>(N) - stats.mean * stats.mean;
 	  if (variance < 0.0 && variance > -1.0e-18) variance = 0.0;
 	  stats.stddev = (variance > 0.0) ? std::sqrt(variance) : 0.0;
@@ -870,7 +885,9 @@ namespace itk
 	    if (any) os << " |";
 	    os << " " << names[i]
 	       << " mean=" << std::scientific << std::setprecision(3) << s.mean
-	       << " range=[" << s.minimum << "," << s.maximum << "]";
+	       << " range=[" << s.minimum << "," << s.maximum << "]"
+	       << " absRange=" << s.absRange
+	       << " norm=" << s.norm;
 	    any = true;
 	  }
 

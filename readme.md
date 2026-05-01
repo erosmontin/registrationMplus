@@ -26,6 +26,7 @@ For a detailed description of the method, please refer to our article:
 - **Multi-metric registration:** Combines MI, NGF, MSE, NC, GD, and NMI to optimise registration accuracy.
 - **Composite cost function:** `V = α·MI + λ·NGF + ν·MSE + ζ·NC + ρ·GD + σ·NMI + κ·LabelDist`.
 - **Non-rigid 3D registration:** B-spline transform efficiently handles deformations in brain images.
+- **Metric calibration utility:** `3DRegCalibrate` sweeps similarity-transform perturbations and reports unit-weight value ranges, absolute ranges, derivative norms, and relative weight ratios.
 - **Rigid & affine transforms:** Similarity (7-DOF) and affine (12-DOF) transforms for global alignment.
 - **Multi-resolution affine:** `3DRegAffineMultiLevel` applies a coarse-to-fine multi-resolution pyramid to the affine registration.
 - **Three derivative-merging modes:**
@@ -38,7 +39,7 @@ For a detailed description of the method, please refer to our article:
   - **Monitor registration quality:** Per-label Sørensen–Dice coefficient is printed at every N iterations, giving real-time feedback on how well structural regions are aligning.
   - **Guide the optimiser:** A signed-distance-transform term (κ) can be added to the composite metric and its analytical derivative, so label boundary information directly influences the optimisation.
 - **Multithreading support:** Accelerates computation for large 3D datasets.
-- **Version flag:** All executables accept `--version` to print the version string and exit.
+- **Version flag:** Registration executables accept `--version` to print the version string and exit.
 - **Open source:** Freely available for research and development.
 
 ## Installation
@@ -63,7 +64,8 @@ cmake ../src
 make -j4
 ```
 
-The four executables are placed in `build/bin/`:
+The registration executables and calibration utility are placed in `build/bin/`:
+- `3DRegCalibrate` - Metric calibration and weight-suggestion utility
 - `3DRegSimilarity` — Similarity (7-DOF) registration
 - `3DRegAffine` — Affine (12-DOF) registration
 - `3DRegAffineMultiLevel` — Multi-resolution affine (12-DOF) registration
@@ -82,6 +84,11 @@ All four programmes share the same `itkMplus` composite metric and most CLI opti
 | `3DRegAffineMultiLevel` | `AffineTransform` | 12 | Multi-resolution RSGD | Coarse-to-fine affine; better convergence basin |
 | `3DRegBsplines` | `BSplineTransform` (cubic) | Grid-dependent | LBFGS-B (quasi-Newton) | Non-rigid local deformation recovery |
 
+`3DRegCalibrate` is a companion utility, not a registration stage. It evaluates
+the shared Mplus metric under controlled rotation, translation, and scale
+perturbations so you can choose balanced starting weights. See
+[3DRegCalibrate_GUIDE.md](./3DRegCalibrate_GUIDE.md) for the full guide.
+
 A typical workflow registers images in order of increasing flexibility:  
 1. `3DRegSimilarity` for coarse alignment  
 2. `3DRegAffine` (or `3DRegAffineMultiLevel`) for full affine correction, warm-started with `-W` from the similarity transform  
@@ -91,7 +98,7 @@ A typical workflow registers images in order of increasing flexibility:
 
 ---
 
-## Common Options (all executables)
+## Common Options (registration executables)
 
 ### Image I/O
 
@@ -228,7 +235,7 @@ When `--modality` is set to `multimodal` or `singlemodal`, sensible default weig
 
 ---
 
-## Label Map / ROI Options (all executables)
+## Label Map / ROI Options (registration executables)
 
 | Long | Default | Description |
 |------|---------|-------------|
@@ -449,6 +456,66 @@ Uses a cubic `BSplineTransform` with the `LBFGSBOptimizer` (quasi-Newton). The n
   --labelhuber true --labelhuberdelta 0.25 \
   --labelsamples 0.1 --labelreport 10
 ```
+
+---
+
+### 5. `3DRegCalibrate` - Metric Calibration Utility
+
+`3DRegCalibrate` uses the same `itkMplus` metric as the registration programs,
+but it does not optimize a transform or write a registered image. It sweeps an
+identity-centered `Similarity3DTransform` across rotation, translation, and
+isotropic scale perturbations, then reports unit-weight metric value scales,
+absolute-value ranges, per-metric derivative norms, and relative value and
+derivative weights.
+
+Use it before a registration run when you want data-specific starting weights
+for `--alpha`, `--lambda`, `--nu`, `--rho`, `--yota`, `--sigma`, and their
+corresponding derivative flags.
+
+| Short | Long | Default | Description |
+|-------|------|---------|-------------|
+| `-f` | `--fixedimage` | required | Fixed image filename |
+| `-m` | `--movingimage` | required | Moving image filename |
+| | `--metrics` | empty | Selector mask `MI,NGF,MSE,GD,NC,NMI[,Label]`; non-zero means calibrate |
+| | `--metric-derivatives` | empty | Optional derivative selector mask |
+| | `--metric-sampling` | empty | Sampling fractions `MI,NGF,MSE,GD,NC,NMI[,Label]` |
+| | `--output-csv` | empty | Optional CSV with one row per sweep sample |
+| | `--rot-max` | `20.0` | Rotation sweep limit in degrees |
+| | `--rot-steps` | `9` | Rotation samples per axis |
+| | `--trans-max` | `10.0` | Translation sweep limit in mm |
+| | `--trans-steps` | `9` | Translation samples per axis |
+| | `--scale-max` | `0.1` | Isotropic scale deviation around `1.0` |
+| | `--scale-steps` | `5` | Scale samples; set `0` to skip |
+| | `--compute-derivative` | `false` | Also evaluate derivative norms; pass `true` explicitly |
+| | `--workingresolution` | `0,0,0` | Optional internal spacing in mm |
+| | `--metric-overlap` | `true` | Restrict metrics to fixed/moving overlap |
+| | `--ngfprecompute` | `false` | Registration-compatible NGF precompute option |
+| | `--labelhuber` / `--labelhuberdelta` | `false` / `0.25` | Registration-compatible robust label loss options |
+| | `--labelnarrowband` / `--labelbandwidth` | `false` / `5.0` | Registration-compatible label boundary-band options |
+
+**Example - calibrate MI + NGF:**
+```bash
+3DRegCalibrate \
+  -f fixed.nii.gz \
+  -m moving.nii.gz \
+  --metrics "1,1,0,0,0,0" \
+  --output-csv calibrate_mi_ngf.csv
+```
+
+**Example - derivative-aware calibration:**
+```bash
+3DRegCalibrate \
+  -f fixed.nii.gz \
+  -m moving.nii.gz \
+  --metrics "1,1,0,0,0,0" \
+  --compute-derivative true \
+  --output-csv calibrate_derivatives.csv
+```
+
+In this tool, `--metrics` is a selector, not a final weight array. The summary's
+`RelValueW` and `RelDerivW` columns are the weights to bring back to the
+registration command. Treat them as starting points and validate the final
+registration visually and, when labels are available, with label/Dice reports.
 
 Run any executable with `--help` to see the full option list at the command line.
 
