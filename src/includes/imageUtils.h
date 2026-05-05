@@ -1,6 +1,11 @@
 
 #include "itkImage.h"
+#include "itkImageFileReader.h"
+#include "itkImageFileWriter.h"
+#include "itkRandomImageSource.h"
+#include "itkResampleImageFilter.h"
 #include <iostream>
+#include <string>
 
 template <typename TImage>
 bool checkIfSize(typename TImage::Pointer meshImage, typename TImage::Pointer fixedImage) {
@@ -83,9 +88,6 @@ void deb(std::string s)
 			std::cout << "-----------------here" <<s<< std::endl;
 
 }
-#include "itkImage.h"
-#include "itkRandomImageSource.h"
-
 template <typename TImage>
 typename TImage::Pointer CreateRandomImage(typename TImage::SizeType size)
 {
@@ -131,11 +133,6 @@ void SaveImage(typename TImage::Pointer image, const std::string& filename)
     writer->SetInput(image);
     writer->Update();
 }
-
-
-
-#include "itkImageFileReader.h"
-#include "itkImageFileWriter.h"
 
 
 template<typename TDeformationFieldType>
