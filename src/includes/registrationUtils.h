@@ -1507,17 +1507,6 @@ public:
             // snapshot than the working grid, resample the originals onto
             // the fixed-image frame at the snapshot target spacing in X/Y.
             // This avoids upsampling already-coarse working data.
-            typename TImage::ConstPointer movSrc =
-                m_OriginalMovingImage ? m_OriginalMovingImage : m_MovingImage;
-            // Track whether movSrc is rooted in the *original* (un-pre-warped)
-            // moving image.  When true and an initial linear transform exists,
-            // every resampling of movSrc must compose `initial ∘ m_Transform`,
-            // because m_Transform alone maps fixed -> pre-warped-moving.  This
-            // is independent of `useOriginals`, which only governs resolution.
-            const bool movSrcIsOriginal = (m_OriginalMovingImage.IsNotNull());
-            typename TImage::ConstPointer fixSrc =
-                m_OriginalFixedImage ? m_OriginalFixedImage : m_FixedImage;
-
             auto fixSpD0  = m_FixedImage->GetSpacing();
             auto fixSize0 = m_FixedImage->GetLargestPossibleRegion().GetSize();
             const double fixMinXY = std::min(fixSpD0[0], fixSpD0[1]);
@@ -1525,30 +1514,36 @@ public:
 
             typename TImage::SpacingType outSpacing = fixSpD0;
             typename TImage::SizeType    outSize    = fixSize0;
+            // Original-resolution rendering is only safe when both original
+            // images are available.  Selecting an original for just one panel
+            // would make the fixed and moving panels show different source
+            // resolutions even though their output pixel grids match.
             const bool useOriginals =
-                (m_OriginalFixedImage || m_OriginalMovingImage) &&
+                m_OriginalFixedImage.IsNotNull() &&
+                m_OriginalMovingImage.IsNotNull() &&
                 snapSp3D > 0.0 && snapSp3D < fixMinXY * 0.99;
-            // For original images, first resample them to the working image's FULL geometry
-            // (all dimensions), then apply the snapshot spacing to X/Y only.
-            // This ensures consistent coordinate systems and avoids frame geometry issues.
+
+            // Keep both panels on the same source-resolution policy.  At the
+            // normal working snapshot spacing, render both working images.  A
+            // finer explicitly requested snapshot may render both originals
+            // directly onto the common fixed-image output grid.
+            typename TImage::ConstPointer movSrc =
+                useOriginals ? m_OriginalMovingImage : m_MovingImage;
+            typename TImage::ConstPointer fixSrc =
+                useOriginals ? m_OriginalFixedImage : m_FixedImage;
+            // Track whether movSrc is rooted in the *original* (un-pre-warped)
+            // moving image.  When true and an initial linear transform exists,
+            // every resampling of movSrc must compose `initial ∘ m_Transform`,
+            // because m_Transform alone maps fixed -> pre-warped-moving.
+            const bool movSrcIsOriginal = useOriginals;
+
             if (useOriginals)
             {
-                // First pass: resample originals to working resolution (full geometry)
-                using Resample = itk::ResampleImageFilter<TImage, TImage>;
-                auto rsToWorking = Resample::New();
-                rsToWorking->SetInput(fixSrc);
-                rsToWorking->SetTransform(itk::IdentityTransform<double, Dim>::New());
-                rsToWorking->SetSize(fixSize0);
-                rsToWorking->SetOutputSpacing(fixSpD0);
-                rsToWorking->SetOutputOrigin(m_FixedImage->GetOrigin());
-                rsToWorking->SetOutputDirection(m_FixedImage->GetDirection());
-                rsToWorking->SetDefaultPixelValue(0);
-                rsToWorking->Update();
-                typename TImage::Pointer fixStaged = rsToWorking->GetOutput();
-                fixStaged->DisconnectPipeline();
-                fixSrc = const_cast<const TImage*>(fixStaged.GetPointer());
-
-                // Now apply snapshot spacing adjustment to X/Y only
+                // Apply the requested snapshot spacing to X/Y only.  Do not
+                // stage the fixed original through the coarse working grid:
+                // doing so discards its native detail while the moving
+                // original is still sampled directly, which is the source of
+                // the fixed/moving snapshot-resolution mismatch.
                 for (unsigned d = 0; d < Dim - 1; ++d)
                 {
                     const double s = fixSpD0[d] / snapSp3D;
